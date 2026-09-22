@@ -1,40 +1,30 @@
 import os
-import asyncio
 from pathlib import Path
 
 from telethon import TelegramClient, events
 
 
 # ============================================================
-# API SETTINGS
+# API
 # ============================================================
 
 API_ID = int(os.getenv("API_ID", "946606"))
 API_HASH = os.getenv("API_HASH", "a183e9d1503a9c6514bd086dd03aeb8e")
 
-
-# ============================================================
-# CHECK API
-# ============================================================
-
 if API_ID == 0:
-    raise ValueError(
-        "API_ID topilmadi. Render Environment Variables ichiga API_ID qo'shing."
-    )
+    raise ValueError("API_ID topilmadi")
 
 if not API_HASH:
-    raise ValueError(
-        "API_HASH topilmadi. Render Environment Variables ichiga API_HASH qo'shing."
-    )
+    raise ValueError("API_HASH topilmadi")
 
 
 # ============================================================
-# SESSION PATH
+# SESSION
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
-SESSION_DIR = BASE_DIR / "bot2_1"
+SESSION_DIR = BASE_DIR / "bot_2"
 SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
 SESSION_NAME = SESSION_DIR / "bot2_1"
@@ -52,25 +42,22 @@ client = TelegramClient(
 
 
 # ============================================================
-# NEW MESSAGE
+# MESSAGE
 # ============================================================
 
 @client.on(events.NewMessage)
 async def new_message(event):
 
-    # Faqat shaxsiy chat
     if event.is_private:
 
         text = event.raw_text.strip()
 
-        # Test komandasi
         if text.lower() == "ping":
-
             await event.reply("Pong 🟢")
 
 
 # ============================================================
-# USERBOT START
+# START
 # ============================================================
 
 async def start():
@@ -85,10 +72,8 @@ async def start():
 
     print("UserBot ishga tushmoqda...")
 
-    # Telegramga ulanish
     await client.start()
 
-    # User ma'lumotlarini olish
     me = await client.get_me()
 
     print()
@@ -109,7 +94,6 @@ async def start():
     print("📡 Xabarlar kuzatilmoqda...")
     print()
 
-    # UserBotni doimiy ishlatish
     await client.run_until_disconnected()
 
 
@@ -120,10 +104,8 @@ async def start():
 if __name__ == "__main__":
 
     try:
-
+        import asyncio
         asyncio.run(start())
 
     except KeyboardInterrupt:
-
-        print()
-        print("🛑 Bot2 UserBot to'xtatildi.")
+        print("🛑 Bot2 to'xtatildi.")
