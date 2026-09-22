@@ -1,15 +1,30 @@
 import os
+import re
+import json
+import asyncio
 from pathlib import Path
 
-from telethon import TelegramClient, events
+from aiohttp import web
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
+
+from telethon import TelegramClient
+from telethon.errors import RPCError
 
 
 # ============================================================
-# API
+# SOZLAMALAR
 # ============================================================
 
 API_ID = int(os.getenv("API_ID", "946606"))
 API_HASH = os.getenv("API_HASH", "a183e9d1503a9c6514bd086dd03aeb8e")
+BOT2_TOKEN = os.getenv("BOT2_TOKEN", "8992607786:AAG-Ii8k1yAr-FB5DXPMsSVcITczQ0uEbq8")
 
 if API_ID == 0:
     raise ValueError("API_ID topilmadi")
@@ -17,241 +32,925 @@ if API_ID == 0:
 if not API_HASH:
     raise ValueError("API_HASH topilmadi")
 
+if not BOT2_TOKEN:
+    raise ValueError("BOT2_TOKEN topilmadi")
+
 
 # ============================================================
-# SESSION
+# PAPKALAR
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
 SESSION_DIR = BASE_DIR / "bot_2"
-SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
-SESSION_NAME = SESSION_DIR / "bot2_1"
-
-
-# ============================================================
-# TELEGRAM CLIENT
-# ============================================================
-
-client = TelegramClient(
-    str(SESSION_NAME),
-    API_ID,
-    API_HASH
+SESSION_DIR.mkdir(
+    parents=True,
+    exist_ok=True
 )
 
-
-# ============================================================
-# /ping
-# ============================================================
-
-@client.on(events.NewMessage)
-async def ping_handler(event):
-
-    if event.raw_text.strip().lower() == "/ping":
-        await event.reply("Pong 🟢")
+ACCOUNTS_FILE = SESSION_DIR / "accounts.json"
 
 
 # ============================================================
-# /id
+# GLOBAL
 # ============================================================
 
-@client.on(events.NewMessage)
-async def id_handler(event):
+clients = {}
 
-    if event.raw_text.strip().lower() == "/id":
+selected_accounts = {}
 
-        sender = await event.get_sender()
+bot_app = None
 
-        if not sender:
-            return
 
-        await event.reply(
-            f"🆔 Telegram ID: `{sender.id}`"
+# ============================================================
+# ACCOUNTS.JSON
+# ============================================================
+
+def load_accounts():
+
+    if not ACCOUNTS_FILE.exists():
+        return {}
+
+    try:
+        with open(
+            ACCOUNTS_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            return json.load(f)
+
+    except Exception:
+        return {}
+
+
+def save_accounts(accounts):
+
+    with open(
+        ACCOUNTS_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            accounts,
+            f,
+            ensure_ascii=False,
+            indent=4
         )
 
 
 # ============================================================
-# /info
+# USER ID
 # ============================================================
 
-@client.on(events.NewMessage)
-async def info_handler(event):
+def get_user_id(update):
 
-    if event.raw_text.strip().lower() == "/info":
+    if update.effective_user:
+        return update.effective_user.id
 
-        sender = await event.get_sender()
-
-        if not sender:
-            return
-
-        first_name = sender.first_name or "Yo'q"
-        last_name = sender.last_name or "Yo'q"
-        username = (
-            f"@{sender.username}"
-            if sender.username
-            else "Yo'q"
-        )
-
-        await event.reply(
-            "👤 **Telegram ma'lumotlari**\n\n"
-            f"🆔 ID: `{sender.id}`\n"
-            f"👤 Ism: `{first_name}`\n"
-            f"👤 Familiya: `{last_name}`\n"
-            f"🔗 Username: `{username}`"
-        )
+    return None
 
 
 # ============================================================
-# /gps
+# /start
 # ============================================================
 
-@client.on(events.NewMessage)
-async def gps_handler(event):
+async def start_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
-    if event.raw_text.strip().lower() == "/gps":
-
-        await event.reply(
-            "📍 **GPS**\n\n"
-            "Render server telefoningizning GPS sensoriga "
-            "to'g'ridan-to'g'ri kira olmaydi.\n\n"
-            "Haqiqiy telefon joylashuvini yuborish uchun "
-            "Android qurilmadan Telegram orqali Location "
-            "yuborilishi kerak.\n\n"
-            "🗺 Google Maps:\n"
-            "https://maps.google.com/"
-        )
-
-
-# ============================================================
-# TG:// COMMANDS
-# ============================================================
-
-@client.on(events.NewMessage)
-async def tg_handler(event):
-
-    text = event.raw_text.strip().lower()
-
-    if text == "/settings":
-        await event.reply(
-            "⚙️ Telegram sozlamalari:\n\n"
-            "tg://settings/"
-        )
-
-    elif text == "/privacy":
-        await event.reply(
-            "🔐 Privacy sozlamalari:\n\n"
-            "tg://settings/privacy"
-        )
-
-    elif text == "/notifications":
-        await event.reply(
-            "🔔 Notification sozlamalari:\n\n"
-            "tg://settings/notifications"
-        )
-
-    elif text == "/language":
-        await event.reply(
-            "🌐 Language sozlamalari:\n\n"
-            "tg://settings/language"
-        )
-
-    elif text == "/data":
-        await event.reply(
-            "📡 Data and Storage sozlamalari:\n\n"
-            "tg://settings/data-and-storage"
-        )
+    await update.message.reply_text(
+        "🤖 Bot2 ishlayapti.\n\n"
+        "Telegram akkauntini ulash uchun:\n"
+        "/login\n\n"
+        "Mavjud komandalar:\n"
+        "/login\n"
+        "/logout\n"
+        "/accounts\n"
+        "/use\n"
+        "/status\n"
+        "/id\n"
+        "/info\n"
+        "/ping\n"
+        "/gps\n"
+        "/help"
+    )
 
 
 # ============================================================
 # /help
 # ============================================================
 
-@client.on(events.NewMessage)
-async def help_handler(event):
+async def help_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
-    if event.raw_text.strip().lower() == "/help":
+    await update.message.reply_text(
+        "🤖 BOT2 COMMANDS\n\n"
 
-        await event.reply(
-            "🤖 **USERBOT COMMANDS**\n\n"
-            "📡 `/ping` — Bot ishlayotganini tekshirish\n"
-            "🆔 `/id` — Telegram ID\n"
-            "👤 `/info` — Akkaunt ma'lumotlari\n"
-            "📍 `/gps` — GPS haqida ma'lumot\n\n"
-            "⚙️ **Telegram sozlamalari**\n"
-            "`/settings` — Telegram Settings\n"
-            "`/privacy` — Privacy\n"
-            "`/notifications` — Notifications\n"
-            "`/language` — Language\n"
-            "`/data` — Data and Storage"
+        "🔐 AKKAUNT\n"
+        "/login — Session ulash\n"
+        "/logout — Tanlangan sessionni uzish\n"
+        "/accounts — Ulangan akkauntlar\n"
+        "/use — Akkaunt tanlash\n"
+        "/status — Holat\n\n"
+
+        "👤 USERBOT\n"
+        "/id — Telegram ID\n"
+        "/info — Akkaunt ma'lumotlari\n"
+        "/ping — Ping\n"
+        "/gps — GPS haqida\n\n"
+
+        "⚙️ TELEGRAM\n"
+        "/settings\n"
+        "/privacy\n"
+        "/notifications\n"
+        "/language\n"
+        "/data"
+    )
+
+
+# ============================================================
+# /login
+# ============================================================
+
+async def login_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    context.user_data["waiting_session"] = True
+
+    await update.message.reply_text(
+        "🔐 **Session ulash**\n\n"
+        "Telethon `.session` faylingizni yuboring.\n\n"
+        "Masalan:\n"
+        "`bot2_1.session`\n\n"
+        "Session fayl Telegram akkauntingizga kirish "
+        "ma'lumotlarini o'z ichiga oladi. Uni faqat "
+        "o'zingiz nazorat qiladigan botga yuboring.",
+        parse_mode="Markdown"
+    )
+
+
+# ============================================================
+# SESSION QABUL QILISH
+# ============================================================
+
+async def session_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not context.user_data.get("waiting_session"):
+        return
+
+    document = update.message.document
+
+    if not document:
+        return
+
+    filename = document.file_name or ""
+
+    if not filename.lower().endswith(".session"):
+
+        await update.message.reply_text(
+            "❌ Faqat `.session` fayl yuboring."
+        )
+
+        return
+
+    context.user_data["waiting_session"] = False
+
+    user_id = get_user_id(update)
+
+    await update.message.reply_text(
+        "⏳ Session qabul qilindi.\n"
+        "Akkaunt tekshirilmoqda..."
+    )
+
+    # --------------------------------------------------------
+    # Xavfsiz fayl nomi
+    # --------------------------------------------------------
+
+    safe_name = re.sub(
+        r"[^a-zA-Z0-9_.-]",
+        "_",
+        Path(filename).name
+    )
+
+    # .session ni saqlaymiz
+    session_path = SESSION_DIR / safe_name
+
+    # Bir xil nom bo'lsa yangi nom
+    counter = 1
+
+    while session_path.exists():
+
+        stem = Path(safe_name).stem
+
+        session_path = (
+            SESSION_DIR /
+            f"{stem}_{counter}.session"
+        )
+
+        counter += 1
+
+    try:
+
+        tg_file = await context.bot.get_file(
+            document.file_id
+        )
+
+        await tg_file.download_to_drive(
+            custom_path=str(session_path)
+        )
+
+    except Exception as e:
+
+        await update.message.reply_text(
+            f"❌ Faylni yuklab bo'lmadi:\n{e}"
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Sessionni tekshirish
+    # --------------------------------------------------------
+
+    client = None
+
+    try:
+
+        client = TelegramClient(
+            str(session_path.with_suffix("")),
+            API_ID,
+            API_HASH
+        )
+
+        await client.connect()
+
+        if not await client.is_user_authorized():
+
+            await client.disconnect()
+
+            session_path.unlink(
+                missing_ok=True
+            )
+
+            await update.message.reply_text(
+                "❌ Bu session avtorizatsiyadan o'tmagan.\n\n"
+                "Pydroid/Telethon orqali qayta login qilib "
+                "session yarating."
+            )
+
+            return
+
+        me = await client.get_me()
+
+        # ----------------------------------------------------
+        # Clientni saqlash
+        # ----------------------------------------------------
+
+        session_key = session_path.stem
+
+        clients[session_key] = client
+
+        accounts = load_accounts()
+
+        accounts[session_key] = {
+            "owner_id": user_id,
+            "user_id": me.id,
+            "username": me.username,
+            "first_name": me.first_name,
+            "last_name": me.last_name,
+            "session": str(session_path)
+        }
+
+        save_accounts(accounts)
+
+        selected_accounts[user_id] = session_key
+
+        username = (
+            f"@{me.username}"
+            if me.username
+            else "Username yo'q"
+        )
+
+        await update.message.reply_text(
+            "✅ **AKKAUNT ULANDI!**\n\n"
+            f"👤 Ism: {me.first_name or 'Yo‘q'}\n"
+            f"👤 Familiya: {me.last_name or 'Yo‘q'}\n"
+            f"🔗 Username: {username}\n"
+            f"🆔 ID: `{me.id}`\n\n"
+            f"📁 Session: `{session_key}`\n\n"
+            "Endi UserBot funksiyalaridan foydalanishingiz mumkin.",
+            parse_mode="Markdown"
+        )
+
+    except Exception as e:
+
+        if client:
+
+            try:
+                await client.disconnect()
+            except:
+                pass
+
+        session_path.unlink(
+            missing_ok=True
+        )
+
+        await update.message.reply_text(
+            "❌ Sessionni tekshirishda xatolik:\n\n"
+            f"{type(e).__name__}: {e}"
         )
 
 
 # ============================================================
-# SIMPLE PING
+# TANLANGAN CLIENT
 # ============================================================
 
-@client.on(events.NewMessage)
-async def simple_ping_handler(event):
+async def get_selected_client(update):
 
-    if event.is_private:
+    user_id = get_user_id(update)
 
-        text = event.raw_text.strip()
+    if not user_id:
+        return None
 
-        if text.lower() == "ping":
-            await event.reply("Pong 🟢")
+    session_key = selected_accounts.get(user_id)
+
+    if not session_key:
+
+        await update.message.reply_text(
+            "❌ Avval akkaunt ulang:\n"
+            "/login"
+        )
+
+        return None
+
+    client = clients.get(session_key)
+
+    if not client:
+
+        await update.message.reply_text(
+            "❌ Session hozir faol emas.\n"
+            "Sessionni qayta ulang:\n"
+            "/login"
+        )
+
+        return None
+
+    if not client.is_connected():
+
+        await client.connect()
+
+    return client
 
 
 # ============================================================
-# START
+# /accounts
+# ============================================================
+
+async def accounts_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    accounts = load_accounts()
+
+    if not accounts:
+
+        await update.message.reply_text(
+            "📭 Hozircha hech qanday akkaunt ulanmagan.\n\n"
+            "/login"
+        )
+
+        return
+
+    user_id = get_user_id(update)
+
+    text = "👥 **ULANGAN AKKAUNTLAR**\n\n"
+
+    number = 1
+
+    for key, data in accounts.items():
+
+        if data.get("owner_id") != user_id:
+            continue
+
+        first_name = data.get(
+            "first_name",
+            ""
+        )
+
+        username = data.get(
+            "username"
+        )
+
+        username_text = (
+            f"@{username}"
+            if username
+            else "Username yo'q"
+        )
+
+        selected = (
+            " 🟢"
+            if selected_accounts.get(user_id) == key
+            else ""
+        )
+
+        text += (
+            f"{number}. {first_name} "
+            f"({username_text}){selected}\n"
+            f"   🆔 `{data.get('user_id')}`\n"
+            f"   🔑 `{key}`\n\n"
+        )
+
+        number += 1
+
+    if number == 1:
+
+        await update.message.reply_text(
+            "📭 Sizga tegishli session topilmadi."
+        )
+
+        return
+
+    await update.message.reply_text(
+        text,
+        parse_mode="Markdown"
+    )
+
+
+# ============================================================
+# /use
+# ============================================================
+
+async def use_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    accounts = load_accounts()
+
+    user_id = get_user_id(update)
+
+    own_accounts = []
+
+    for key, data in accounts.items():
+
+        if data.get("owner_id") == user_id:
+
+            own_accounts.append(
+                (key, data)
+            )
+
+    if not own_accounts:
+
+        await update.message.reply_text(
+            "❌ Avval session ulang:\n"
+            "/login"
+        )
+
+        return
+
+    if not context.args:
+
+        text = (
+            "🔄 **Akkaunt tanlash**\n\n"
+            "Quyidagicha yozing:\n"
+            "`/use SESSION_NOMI`\n\n"
+            "Mavjud sessionlar:\n\n"
+        )
+
+        for key, data in own_accounts:
+
+            text += (
+                f"🔑 `{key}` — "
+                f"{data.get('first_name', '')}\n"
+            )
+
+        await update.message.reply_text(
+            text,
+            parse_mode="Markdown"
+        )
+
+        return
+
+    key = context.args[0]
+
+    if key not in accounts:
+
+        await update.message.reply_text(
+            "❌ Bunday session topilmadi."
+        )
+
+        return
+
+    if accounts[key].get("owner_id") != user_id:
+
+        await update.message.reply_text(
+            "❌ Bu session sizga tegishli emas."
+        )
+
+        return
+
+    if key not in clients:
+
+        await update.message.reply_text(
+            "❌ Session faol emas."
+        )
+
+        return
+
+    selected_accounts[user_id] = key
+
+    data = accounts[key]
+
+    await update.message.reply_text(
+        "✅ Akkaunt tanlandi.\n\n"
+        f"👤 {data.get('first_name', '')}\n"
+        f"🆔 `{data.get('user_id')}`",
+        parse_mode="Markdown"
+    )
+
+
+# ============================================================
+# /status
+# ============================================================
+
+async def status_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    client = await get_selected_client(update)
+
+    if not client:
+        return
+
+    me = await client.get_me()
+
+    await update.message.reply_text(
+        "🟢 **USERBOT ISHLAYAPTI**\n\n"
+        f"👤 {me.first_name or ''}\n"
+        f"🆔 `{me.id}`\n"
+        f"🔗 @{me.username if me.username else 'yo‘q'}",
+        parse_mode="Markdown"
+    )
+
+
+# ============================================================
+# /id
+# ============================================================
+
+async def id_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    client = await get_selected_client(update)
+
+    if not client:
+        return
+
+    me = await client.get_me()
+
+    await update.message.reply_text(
+        f"🆔 Telegram ID:\n`{me.id}`",
+        parse_mode="Markdown"
+    )
+
+
+# ============================================================
+# /info
+# ============================================================
+
+async def info_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    client = await get_selected_client(update)
+
+    if not client:
+        return
+
+    me = await client.get_me()
+
+    username = (
+        f"@{me.username}"
+        if me.username
+        else "Yo'q"
+    )
+
+    await update.message.reply_text(
+        "👤 **USERBOT AKKAUNTI**\n\n"
+        f"🆔 ID: `{me.id}`\n"
+        f"👤 Ism: `{me.first_name or 'Yo‘q'}`\n"
+        f"👤 Familiya: `{me.last_name or 'Yo‘q'}`\n"
+        f"🔗 Username: `{username}`\n"
+        f"📱 Bot: `{me.bot}`",
+        parse_mode="Markdown"
+    )
+
+
+# ============================================================
+# /ping
+# ============================================================
+
+async def ping_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    client = await get_selected_client(update)
+
+    if not client:
+        return
+
+    await update.message.reply_text(
+        "Pong 🟢"
+    )
+
+
+# ============================================================
+# /gps
+# ============================================================
+
+async def gps_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    await update.message.reply_text(
+        "📍 **GPS**\n\n"
+        "UserBot ishlayotgan Render server telefonning "
+        "GPS sensoriga kira olmaydi.\n\n"
+        "Haqiqiy telefon GPS joylashuvini olish uchun "
+        "telefon tomonidan Location yuborilishi kerak.\n\n"
+        "🗺 Google Maps:\n"
+        "https://maps.google.com/"
+    )
+
+
+# ============================================================
+# TG:// COMMANDS
+# ============================================================
+
+async def settings_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    await update.message.reply_text(
+        "⚙️ Telegram Settings:\n"
+        "tg://settings/"
+    )
+
+
+async def privacy_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    await update.message.reply_text(
+        "🔐 Privacy:\n"
+        "tg://settings/privacy"
+    )
+
+
+async def notifications_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    await update.message.reply_text(
+        "🔔 Notifications:\n"
+        "tg://settings/notifications"
+    )
+
+
+async def language_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    await update.message.reply_text(
+        "🌐 Language:\n"
+        "tg://settings/language"
+    )
+
+
+async def data_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    await update.message.reply_text(
+        "📡 Data and Storage:\n"
+        "tg://settings/data-and-storage"
+    )
+
+
+# ============================================================
+# /logout
+# ============================================================
+
+async def logout_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    user_id = get_user_id(update)
+
+    session_key = selected_accounts.get(user_id)
+
+    if not session_key:
+
+        await update.message.reply_text(
+            "❌ Tanlangan akkaunt yo'q."
+        )
+
+        return
+
+    client = clients.get(session_key)
+
+    if client:
+
+        try:
+            await client.disconnect()
+        except:
+            pass
+
+        clients.pop(
+            session_key,
+            None
+        )
+
+    accounts = load_accounts()
+
+    data = accounts.pop(
+        session_key,
+        None
+    )
+
+    save_accounts(accounts)
+
+    selected_accounts.pop(
+        user_id,
+        None
+    )
+
+    if data:
+
+        session_path = Path(
+            data.get(
+                "session",
+                ""
+            )
+        )
+
+        session_path.unlink(
+            missing_ok=True
+        )
+
+    await update.message.reply_text(
+        "✅ Tanlangan akkaunt uzildi va "
+        "session fayli o'chirildi."
+    )
+
+
+# ============================================================
+# SESSIONLARNI STARTDA YUKLASH
+# ============================================================
+
+async def load_sessions():
+
+    accounts = load_accounts()
+
+    for session_path in SESSION_DIR.glob("*.session"):
+
+        key = session_path.stem
+
+        if key in clients:
+            continue
+
+        try:
+
+            client = TelegramClient(
+                str(session_path.with_suffix("")),
+                API_ID,
+                API_HASH
+            )
+
+            await client.connect()
+
+            if not await client.is_user_authorized():
+
+                await client.disconnect()
+
+                print(
+                    f"❌ Session avtorizatsiyasiz: {key}"
+                )
+
+                continue
+
+            me = await client.get_me()
+
+            clients[key] = client
+
+            if key not in accounts:
+
+                accounts[key] = {
+                    "owner_id": None,
+                    "user_id": me.id,
+                    "username": me.username,
+                    "first_name": me.first_name,
+                    "last_name": me.last_name,
+                    "session": str(session_path)
+                }
+
+            print(
+                f"✅ Session yuklandi: "
+                f"{me.first_name} "
+                f"(@{me.username or 'yoq'})"
+            )
+
+        except Exception as e:
+
+            print(
+                f"❌ Session yuklanmadi "
+                f"{key}: {e}"
+            )
+
+    save_accounts(accounts)
+
+
+# ============================================================
+# WEB HEALTH CHECK
+# ============================================================
+
+async def health(request):
+
+    return web.Response(
+        text="Bot2 ishlayapti 🟢"
+    )
+
+
+async def start_web():
+
+    app = web.Application()
+
+    app.router.add_get(
+        "/",
+        health
+    )
+
+    port = int(
+        os.getenv(
+            "PORT",
+            "10000"
+        )
+    )
+
+    runner = web.AppRunner(app)
+
+    await runner.setup()
+
+    site = web.TCPSite(
+        runner,
+        "0.0.0.0",
+        port
+    )
+
+    await site.start()
+
+    print(
+        f"Bot2 Web Server: {port}"
+    )
+
+
+# ============================================================
+# TELEGRAM BOTNI ISHGA TUSHIRISH
 # ============================================================
 
 async def start():
 
-    print("=" * 50)
-    print("BOT2 — TELEGRAM USERBOT")
-    print("=" * 50)
+    global bot_app
 
-    print()
-    print(f"Session: {SESSION_NAME}")
-    print()
+    print("=" * 60)
+    print("BOT2 — USERBOT CONNECTOR")
+    print("=" * 60)
 
-    print("UserBot ishga tushmoqda...")
+    # --------------------------------------------------------
+    # Eski sessionlarni yuklash
+    # --------------------------------------------------------
 
-    await client.start()
+    await load_sessions()
 
-    me = await client.get_me()
-
-    print()
-    print("✅ BOT2 USERBOT ISHLADI")
-    print()
-
-    print(f"Ism: {me.first_name or ''}")
-    print(f"Familiya: {me.last_name or ''}")
-
-    if me.username:
-        print(f"Username: @{me.username}")
-    else:
-        print("Username: yo'q")
-
-    print(f"ID: {me.id}")
-
-    print()
-    print("📡 Xabarlar kuzatilmoqda...")
-    print()
-
-    await client.run_until_disconnected()
-
-
-# ============================================================
-# DIRECT START
-# ============================================================
-
-if __name__ == "__main__":
-
-    try:
-        import asyncio
-        asyncio.run(start())
-
-    except KeyboardInterrupt:
-        print("🛑 Bot2 to'xtatildi.")
