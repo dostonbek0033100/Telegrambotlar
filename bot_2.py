@@ -134,6 +134,28 @@ async def main():
     print()
 
     # Doimiy ishlash
+    async def start():
+
+    print("=" * 50)
+    print("BOT2 — TELEGRAM USERBOT")
+    print("=" * 50)
+
+    await client.start()
+
+    me = await client.get_me()
+
+    print()
+    print("✅ BOT2 USERBOT ISHLADI")
+    print(f"Ism: {me.first_name or ''}")
+    print(f"Familiya: {me.last_name or ''}")
+
+    if me.username:
+        print(f"Username: @{me.username}")
+
+    print(f"ID: {me.id}")
+    print("📡 Xabarlar kuzatilmoqda...")
+
+    await client.run_until_disconnected()
     await client.run_until_disconnected()
 
 
