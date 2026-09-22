@@ -42,11 +42,157 @@ client = TelegramClient(
 
 
 # ============================================================
-# MESSAGE
+# /ping
 # ============================================================
 
 @client.on(events.NewMessage)
-async def new_message(event):
+async def ping_handler(event):
+
+    if event.raw_text.strip().lower() == "/ping":
+        await event.reply("Pong 🟢")
+
+
+# ============================================================
+# /id
+# ============================================================
+
+@client.on(events.NewMessage)
+async def id_handler(event):
+
+    if event.raw_text.strip().lower() == "/id":
+
+        sender = await event.get_sender()
+
+        if not sender:
+            return
+
+        await event.reply(
+            f"🆔 Telegram ID: `{sender.id}`"
+        )
+
+
+# ============================================================
+# /info
+# ============================================================
+
+@client.on(events.NewMessage)
+async def info_handler(event):
+
+    if event.raw_text.strip().lower() == "/info":
+
+        sender = await event.get_sender()
+
+        if not sender:
+            return
+
+        first_name = sender.first_name or "Yo'q"
+        last_name = sender.last_name or "Yo'q"
+        username = (
+            f"@{sender.username}"
+            if sender.username
+            else "Yo'q"
+        )
+
+        await event.reply(
+            "👤 **Telegram ma'lumotlari**\n\n"
+            f"🆔 ID: `{sender.id}`\n"
+            f"👤 Ism: `{first_name}`\n"
+            f"👤 Familiya: `{last_name}`\n"
+            f"🔗 Username: `{username}`"
+        )
+
+
+# ============================================================
+# /gps
+# ============================================================
+
+@client.on(events.NewMessage)
+async def gps_handler(event):
+
+    if event.raw_text.strip().lower() == "/gps":
+
+        await event.reply(
+            "📍 **GPS**\n\n"
+            "Render server telefoningizning GPS sensoriga "
+            "to'g'ridan-to'g'ri kira olmaydi.\n\n"
+            "Haqiqiy telefon joylashuvini yuborish uchun "
+            "Android qurilmadan Telegram orqali Location "
+            "yuborilishi kerak.\n\n"
+            "🗺 Google Maps:\n"
+            "https://maps.google.com/"
+        )
+
+
+# ============================================================
+# TG:// COMMANDS
+# ============================================================
+
+@client.on(events.NewMessage)
+async def tg_handler(event):
+
+    text = event.raw_text.strip().lower()
+
+    if text == "/settings":
+        await event.reply(
+            "⚙️ Telegram sozlamalari:\n\n"
+            "tg://settings/"
+        )
+
+    elif text == "/privacy":
+        await event.reply(
+            "🔐 Privacy sozlamalari:\n\n"
+            "tg://settings/privacy"
+        )
+
+    elif text == "/notifications":
+        await event.reply(
+            "🔔 Notification sozlamalari:\n\n"
+            "tg://settings/notifications"
+        )
+
+    elif text == "/language":
+        await event.reply(
+            "🌐 Language sozlamalari:\n\n"
+            "tg://settings/language"
+        )
+
+    elif text == "/data":
+        await event.reply(
+            "📡 Data and Storage sozlamalari:\n\n"
+            "tg://settings/data-and-storage"
+        )
+
+
+# ============================================================
+# /help
+# ============================================================
+
+@client.on(events.NewMessage)
+async def help_handler(event):
+
+    if event.raw_text.strip().lower() == "/help":
+
+        await event.reply(
+            "🤖 **USERBOT COMMANDS**\n\n"
+            "📡 `/ping` — Bot ishlayotganini tekshirish\n"
+            "🆔 `/id` — Telegram ID\n"
+            "👤 `/info` — Akkaunt ma'lumotlari\n"
+            "📍 `/gps` — GPS haqida ma'lumot\n\n"
+            "⚙️ **Telegram sozlamalari**\n"
+            "`/settings` — Telegram Settings\n"
+            "`/privacy` — Privacy\n"
+            "`/notifications` — Notifications\n"
+            "`/language` — Language\n"
+            "`/data` — Data and Storage"
+        )
+
+
+# ============================================================
+# SIMPLE PING
+# ============================================================
+
+@client.on(events.NewMessage)
+async def simple_ping_handler(event):
 
     if event.is_private:
 
