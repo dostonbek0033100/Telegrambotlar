@@ -9,8 +9,8 @@ from telethon import TelegramClient, events
 # API SETTINGS
 # ============================================================
 
-API_ID = int(os.getenv("API_ID", "0"))
-API_HASH = os.getenv("API_HASH", "")
+API_ID = int(os.getenv("API_ID", "946606"))
+API_HASH = os.getenv("API_HASH", "a183e9d1503a9c6514bd086dd03aeb8e")
 
 
 # ============================================================
