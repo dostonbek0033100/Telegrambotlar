@@ -1,10 +1,14 @@
-import os
-import re
-import json
 import asyncio
+import json
 from pathlib import Path
 
-from telegram import Update
+from telegram import (
+    Update,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -16,194 +20,208 @@ from telegram.ext import (
 from telethon import TelegramClient
 
 
-# ============================================================
-# TELEGRAM MA'LUMOTLARI
-# ============================================================
-
-API_ID = 946606
-
-API_HASH = "a183e9d1503a9c6514bd086dd03aeb8e"
+# =========================================================
+# SOZLAMALAR
+# =========================================================
 
 BOT2_TOKEN = "8992607786:AAG-Ii8k1yAr-FB5DXPMsSVcITczQ0uEbq8"
 
+API_ID = 946606
+API_HASH = "a183e9d1503a9c6514bd086dd03aeb8e"
 
-# ============================================================
-# PAPKA
-# ============================================================
+# Faqat siz ishlatishingiz uchun Telegram ID'ingiz
+OWNER_ID = 1072547777
+
+
+# =========================================================
+# PAPKALAR
+# =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
 SESSION_DIR = BASE_DIR / "bot_2"
-
-SESSION_DIR.mkdir(
-    parents=True,
-    exist_ok=True
-)
+SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
 ACCOUNTS_FILE = SESSION_DIR / "accounts.json"
 
 
-# ============================================================
+# =========================================================
 # GLOBAL
-# ============================================================
+# =========================================================
 
 clients = {}
+accounts = {}
+selected_session = None
 
-selected_accounts = {}
 
+# =========================================================
+# ACCOUNTS.JSON
+# =========================================================
 
-# ============================================================
-# ACCOUNTS JSON
-# ============================================================
+def save_accounts():
+    data = {}
+
+    for name, info in accounts.items():
+        data[name] = {
+            "name": info.get("name", ""),
+            "username": info.get("username", ""),
+            "user_id": info.get("user_id", 0),
+        }
+
+    with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
 
 def load_accounts():
+    global accounts
 
     if not ACCOUNTS_FILE.exists():
-        return {}
+        accounts = {}
+        return
 
     try:
-
-        with open(
-            ACCOUNTS_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
-
-            return json.load(f)
-
+        with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
+            accounts = json.load(f)
     except Exception:
+        accounts = {}
 
-        return {}
+
+# =========================================================
+# OWNER TEKSHIRISH
+# =========================================================
+
+def is_owner(update: Update):
+    user = update.effective_user
+
+    if not user:
+        return False
+
+    return user.id == OWNER_ID
 
 
-def save_accounts(accounts):
-
-    with open(
-        ACCOUNTS_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        json.dump(
-            accounts,
-            f,
-            ensure_ascii=False,
-            indent=4
+async def access_denied(update: Update):
+    if update.message:
+        await update.message.reply_text(
+            "⛔ Bu botdan foydalanishga ruxsat yo‘q."
         )
 
 
-# ============================================================
-# USER ID
-# ============================================================
+# =========================================================
+# START
+# =========================================================
 
-def get_user_id(update):
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if update.effective_user:
-
-        return update.effective_user.id
-
-    return None
-
-
-# ============================================================
-# /start
-# ============================================================
-
-async def start_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+    if not is_owner(update):
+        await access_denied(update)
+        return
 
     await update.message.reply_text(
-        "🤖 BOT2 ishlayapti 🟢\n\n"
-
-        "🔐 /login — Session ulash\n"
-        "👥 /accounts — Akkauntlar\n"
-        "🔄 /use — Akkaunt tanlash\n"
-        "📡 /status — Holat\n"
-        "🚪 /logout — Akkauntni uzish\n\n"
-
-        "👤 /id — ID\n"
-        "ℹ️ /info — Ma'lumot\n"
-        "🏓 /ping — Ping\n"
-        "📍 /gps — GPS\n\n"
-
-        "⚙️ /settings\n"
-        "🔐 /privacy\n"
-        "🔔 /notifications\n"
-        "🌐 /language\n"
-        "📡 /data\n\n"
-
-        "❓ /help"
+        "✅ Bot2 ishlayapti!\n\n"
+        "Bu bot orqali Telegram UserBot sessionlarini ulashingiz mumkin.\n\n"
+        "/help — komandalar"
     )
 
 
-# ============================================================
-# /help
-# ============================================================
+# =========================================================
+# HELP
+# =========================================================
 
-async def help_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text(
-        "🤖 BOT2 COMMANDS\n\n"
+    if not is_owner(update):
+        await access_denied(update)
+        return
 
-        "🔐 AKKAUNT\n"
-        "/login — Session ulash\n"
-        "/accounts — Ulangan akkauntlar\n"
-        "/use — Akkaunt tanlash\n"
-        "/status — Ulanish holati\n"
-        "/logout — Akkauntni uzish\n\n"
+    text = (
+        "📚 BOT2 KOMANDALAR\n\n"
 
-        "👤 USERBOT\n"
+        "🔐 UserBot:\n"
+        "/login — .session ulash\n"
+        "/accounts — ulangan accountlar\n"
+        "/use — account tanlash\n"
+        "/logout — accountni o‘chirish\n"
+        "/status — holatini ko‘rish\n"
         "/id — Telegram ID\n"
-        "/info — Akkaunt ma'lumotlari\n"
-        "/ping — Ping\n"
-        "/gps — GPS\n\n"
+        "/info — account ma’lumoti\n\n"
 
-        "⚙️ TELEGRAM\n"
-        "/settings\n"
-        "/privacy\n"
-        "/notifications\n"
-        "/language\n"
-        "/data"
+        "⚙️ Bot:\n"
+        "/ping — tekshirish\n"
+        "/gps — hozirgi joylashuvni yuborish\n"
+        "/settings — Telegram sozlamalari\n"
+        "/privacy — Privacy\n"
+        "/notifications — Notifications\n"
+        "/language — Language\n"
+        "/data — Data\n"
     )
 
+    await update.message.reply_text(text)
 
-# ============================================================
-# /login
-# ============================================================
 
-async def login_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+# =========================================================
+# LOGIN
+# =========================================================
+
+async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
 
     context.user_data["waiting_session"] = True
 
     await update.message.reply_text(
         "🔐 SESSION ULASH\n\n"
-        "Telethon `.session` faylingizni yuboring.\n\n"
+        "Telegram .session faylini shu chatga yuboring.\n\n"
         "Masalan:\n"
-        "bot2_1.session\n\n"
-        "Fayl yuborilgandan keyin avtomatik tekshiriladi."
+        "account.session\n\n"
+        "⚠️ Faqat o‘zingizga tegishli session faylini yuboring."
     )
 
 
-# ============================================================
-# SESSION QABUL QILISH
-# ============================================================
+# =========================================================
+# SESSION NOMINI TAKRORLANMAS QILISH
+# =========================================================
 
-async def session_handler(
+def unique_session_path(filename):
+
+    filename = Path(filename).name
+
+    if not filename.endswith(".session"):
+        filename += ".session"
+
+    path = SESSION_DIR / filename
+
+    if not path.exists():
+        return path
+
+    stem = path.stem
+
+    number = 1
+
+    while True:
+        new_path = SESSION_DIR / f"{stem}_{number}.session"
+
+        if not new_path.exists():
+            return new_path
+
+        number += 1
+
+
+# =========================================================
+# SESSION QABUL QILISH
+# =========================================================
+
+async def session_file_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
 
-    if not context.user_data.get(
-        "waiting_session"
-    ):
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    if not context.user_data.get("waiting_session"):
         return
 
     document = update.message.document
@@ -214,77 +232,40 @@ async def session_handler(
     filename = document.file_name or ""
 
     if not filename.lower().endswith(".session"):
-
         await update.message.reply_text(
-            "❌ Faqat `.session` fayl yuboring."
+            "❌ Faqat .session fayl yuboring."
         )
-
         return
 
     context.user_data["waiting_session"] = False
 
-    user_id = get_user_id(update)
+    if document.file_size and document.file_size > 10 * 1024 * 1024:
+        await update.message.reply_text(
+            "❌ Session fayli juda katta."
+        )
+        return
 
     await update.message.reply_text(
-        "⏳ Session qabul qilindi.\n\n"
-        "🔍 Tekshirilmoqda..."
+        "⏳ Session yuklanmoqda..."
     )
-
-    # --------------------------------------------------------
-    # Xavfsiz fayl nomi
-    # --------------------------------------------------------
-
-    safe_name = re.sub(
-        r"[^a-zA-Z0-9_.-]",
-        "_",
-        Path(filename).name
-    )
-
-    session_path = SESSION_DIR / safe_name
-
-    counter = 1
-
-    while session_path.exists():
-
-        stem = Path(safe_name).stem
-
-        session_path = (
-            SESSION_DIR /
-            f"{stem}_{counter}.session"
-        )
-
-        counter += 1
-
-    # --------------------------------------------------------
-    # Faylni yuklash
-    # --------------------------------------------------------
 
     try:
 
-        tg_file = await context.bot.get_file(
+        session_path = unique_session_path(filename)
+
+        telegram_file = await context.bot.get_file(
             document.file_id
         )
 
-        await tg_file.download_to_drive(
+        await telegram_file.download_to_drive(
             custom_path=str(session_path)
         )
 
-    except Exception as e:
+        session_name = session_path.stem
 
         await update.message.reply_text(
-            "❌ Session faylini yuklab bo'lmadi.\n\n"
-            f"{e}"
+            "🔍 Session tekshirilmoqda..."
         )
-
-        return
-
-    # --------------------------------------------------------
-    # Telethon
-    # --------------------------------------------------------
-
-    client = None
-
-    try:
 
         client = TelegramClient(
             str(session_path.with_suffix("")),
@@ -300,180 +281,620 @@ async def session_handler(
 
             await client.disconnect()
 
-            session_path.unlink(
-                missing_ok=True
-            )
+            try:
+                session_path.unlink()
+            except Exception:
+                pass
 
             await update.message.reply_text(
-                "❌ Bu session Telegram akkauntiga "
-                "ulangan emas.\n\n"
-                "Pydroid orqali qayta login qilib "
-                "session yarating."
+                "❌ Session Telegram akkauntiga login qilinmagan.\n\n"
+                "Boshqa .session fayl yuboring."
             )
 
             return
 
         me = await client.get_me()
 
-        session_key = session_path.stem
+        clients[session_name] = client
 
-        clients[session_key] = client
-
-        # ----------------------------------------------------
-        # Saqlash
-        # ----------------------------------------------------
-
-        accounts = load_accounts()
-
-        accounts[session_key] = {
-            "owner_id": user_id,
+        accounts[session_name] = {
+            "name": me.first_name or "",
+            "username": me.username or "",
             "user_id": me.id,
-            "username": me.username,
-            "first_name": me.first_name,
-            "last_name": me.last_name,
-            "session": str(session_path)
         }
 
-        save_accounts(accounts)
+        save_accounts()
 
-        selected_accounts[user_id] = session_key
-
-        username = (
+        username_text = (
             f"@{me.username}"
             if me.username
-            else "Username yo'q"
+            else "Username yo‘q"
         )
 
         await update.message.reply_text(
-            "✅ AKKAUNT MUVAFFAQIYATLI ULANDI!\n\n"
-
-            f"👤 Ism: {me.first_name or 'Yo‘q'}\n"
-            f"👤 Familiya: {me.last_name or 'Yo‘q'}\n"
-            f"🔗 Username: {username}\n"
+            "✅ SESSION MUVAFFAQIYATLI ULANDI!\n\n"
+            f"📁 Session: {session_name}\n"
+            f"👤 Ism: {me.first_name or ''}\n"
+            f"🔹 Username: {username_text}\n"
             f"🆔 ID: {me.id}\n\n"
-
-            f"🔑 Session: {session_key}\n\n"
-
-            "🟢 UserBot tayyor."
+            "Endi /use orqali accountni tanlashingiz mumkin."
         )
 
     except Exception as e:
 
-        if client:
-
-            try:
+        try:
+            if "client" in locals():
                 await client.disconnect()
-            except:
-                pass
-
-        session_path.unlink(
-            missing_ok=True
-        )
+        except Exception:
+            pass
 
         await update.message.reply_text(
-            "❌ Sessionni ochishda xatolik:\n\n"
+            "❌ Sessionni ulashda xatolik:\n\n"
             f"{type(e).__name__}: {e}"
         )
 
 
-# ============================================================
-# TANLANGAN CLIENT
-# ============================================================
-
-async def get_selected_client(update):
-
-    user_id = get_user_id(update)
-
-    if not user_id:
-        return None
-
-    session_key = selected_accounts.get(
-        user_id
-    )
-
-    if not session_key:
-
-        await update.message.reply_text(
-            "❌ Akkaunt tanlanmagan.\n\n"
-            "Avval:\n"
-            "/login"
-        )
-
-        return None
-
-    client = clients.get(
-        session_key
-    )
-
-    if not client:
-
-        await update.message.reply_text(
-            "❌ Session hozir ishlamayapti.\n\n"
-            "Sessionni qayta ulang:\n"
-            "/login"
-        )
-
-        return None
-
-    if not client.is_connected():
-
-        await client.connect()
-
-    return client
-
-
-# ============================================================
-# /accounts
-# ============================================================
+# =========================================================
+# ACCOUNTS
+# =========================================================
 
 async def accounts_command(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
 
-    accounts = load_accounts()
+    if not is_owner(update):
+        await access_denied(update)
+        return
 
-    user_id = get_user_id(update)
-
-    text = "👥 ULANGAN AKKAUNTLAR\n\n"
-
-    count = 0
-
-    for key, data in accounts.items():
-
-        if data.get("owner_id") != user_id:
-            continue
-
-        count += 1
-
-        username = data.get(
-            "username"
+    if not accounts:
+        await update.message.reply_text(
+            "📭 Hozircha session ulanmagan."
         )
+        return
+
+    text = "👤 ULANGAN ACCOUNTLAR:\n\n"
+
+    for number, (name, info) in enumerate(
+        accounts.items(),
+        start=1
+    ):
+
+        username = info.get("username", "")
 
         username_text = (
             f"@{username}"
             if username
-            else "Username yo'q"
+            else "Username yo‘q"
         )
 
         selected = ""
 
-        if selected_accounts.get(
-            user_id
-        ) == key:
-
-            selected = " 🟢 TANLANGAN"
+        if name == selected_session:
+            selected = " ⭐"
 
         text += (
-            f"{count}. {data.get('first_name', '')}\n"
-            f"   {username_text}\n"
-            f"   🆔 {data.get('user_id')}\n"
-            f"   🔑 {key}{selected}\n\n"
+            f"{number}. {name}{selected}\n"
+            f"   👤 {info.get('name', '')}\n"
+            f"   🔹 {username_text}\n"
+            f"   🆔 {info.get('user_id', '')}\n\n"
         )
 
-    if count == 0:
+    await update.message.reply_text(text)
+
+
+# =========================================================
+# USE
+# =========================================================
+
+async def use_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    global selected_session
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    if not accounts:
+        await update.message.reply_text(
+            "📭 Avval /login orqali session ulang."
+        )
+        return
+
+    if not context.args:
+
+        text = (
+            "👉 Account tanlang:\n\n"
+            "Mavjud sessionlar:\n\n"
+        )
+
+        for name in accounts:
+            text += f"• {name}\n"
+
+        text += (
+            "\nMisol:\n"
+            "/use account"
+        )
+
+        await update.message.reply_text(text)
+
+        return
+
+    name = context.args[0]
+
+    if name not in accounts:
+        await update.message.reply_text(
+            "❌ Bunday session topilmadi.\n\n"
+            "📋 /accounts"
+        )
+        return
+
+    if name not in clients:
+
+        session_path = SESSION_DIR / f"{name}.session"
+
+        if not session_path.exists():
+            await update.message.reply_text(
+                "❌ Session fayli topilmadi."
+            )
+            return
+
+        try:
+
+            client = TelegramClient(
+                str(session_path.with_suffix("")),
+                API_ID,
+                API_HASH
+            )
+
+            await client.connect()
+
+            if not await client.is_user_authorized():
+                await client.disconnect()
+
+                await update.message.reply_text(
+                    "❌ Session autorizatsiyadan o‘tmagan."
+                )
+
+                return
+
+            clients[name] = client
+
+        except Exception as e:
+
+            await update.message.reply_text(
+                f"❌ Ulanishda xato:\n{e}"
+            )
+
+            return
+
+    selected_session = name
+
+    await update.message.reply_text(
+        f"✅ Account tanlandi:\n\n"
+        f"📁 {name}\n"
+        f"👤 {accounts[name].get('name', '')}\n"
+        f"🆔 {accounts[name].get('user_id', '')}"
+    )
+
+
+# =========================================================
+# STATUS
+# =========================================================
+
+async def status_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    if not selected_session:
+        await update.message.reply_text(
+            "❌ Hali account tanlanmagan.\n\n"
+            "/use SESSION_NOMI"
+        )
+        return
+
+    client = clients.get(selected_session)
+
+    if not client:
+        await update.message.reply_text(
+            "🔴 Client ulanmagan."
+        )
+        return
+
+    try:
+
+        connected = client.is_connected()
+
+        if connected:
+            status = "🟢 Ulangan"
+        else:
+            status = "🔴 Ulanmagan"
 
         await update.message.reply_text(
+            f"📡 STATUS\n\n"
+            f"📁 Session: {selected_session}\n"
+            f"Holat: {status}"
+        )
+
+    except Exception as e:
+
+        await update.message.reply_text(
+            f"❌ Xato:\n{e}"
+        )
+
+
+# =========================================================
+# ID
+# =========================================================
+
+async def id_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    if not selected_session:
+        await update.message.reply_text(
+            "❌ Account tanlanmagan."
+        )
+        return
+
+    client = clients.get(selected_session)
+
+    if not client:
+        await update.message.reply_text(
+            "❌ Client ulanmagan."
+        )
+        return
+
+    try:
+
+        me = await client.get_me()
+
+        await update.message.reply_text(
+            f"🆔 Telegram ID: {me.id}"
+        )
+
+    except Exception as e:
+
+        await update.message.reply_text(
+            f"❌ Xato:\n{e}"
+        )
+
+
+# =========================================================
+# INFO
+# =========================================================
+
+async def info_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    if not selected_session:
+        await update.message.reply_text(
+            "❌ Account tanlanmagan."
+        )
+        return
+
+    client = clients.get(selected_session)
+
+    if not client:
+        await update.message.reply_text(
+            "❌ Client ulanmagan."
+        )
+        return
+
+    try:
+
+        me = await client.get_me()
+
+        username = (
+            f"@{me.username}"
+            if me.username
+            else "Username yo‘q"
+        )
+
+        await update.message.reply_text(
+            "👤 ACCOUNT INFO\n\n"
+            f"Ism: {me.first_name or ''}\n"
+            f"Familiya: {me.last_name or ''}\n"
+            f"Username: {username}\n"
+            f"ID: {me.id}\n"
+            f"Phone: {me.phone or 'yashirilgan'}"
+        )
+
+    except Exception as e:
+
+        await update.message.reply_text(
+            f"❌ Xato:\n{e}"
+        )
+
+
+# =========================================================
+# LOGOUT
+# =========================================================
+
+async def logout_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    global selected_session
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    if not context.args:
+
+        if selected_session:
+
+            await update.message.reply_text(
+                "⚠️ Tanlangan accountni o‘chirish uchun:\n\n"
+                "/logout CONFIRM"
+            )
+
+        else:
+
+            await update.message.reply_text(
+                "❌ Account tanlanmagan."
+            )
+
+        return
+
+    if context.args[0].upper() != "CONFIRM":
+        await update.message.reply_text(
+            "❌ Tasdiqlash uchun:\n"
+            "/logout CONFIRM"
+        )
+        return
+
+    if not selected_session:
+        await update.message.reply_text(
+            "❌ Account tanlanmagan."
+        )
+        return
+
+    name = selected_session
+
+    client = clients.get(name)
+
+    try:
+        if client:
+            await client.disconnect()
+    except Exception:
+        pass
+
+    clients.pop(name, None)
+
+    session_path = SESSION_DIR / f"{name}.session"
+
+    try:
+        if session_path.exists():
+            session_path.unlink()
+    except Exception as e:
+
+        await update.message.reply_text(
+            f"⚠️ Session faylini o‘chirishda xato:\n{e}"
+        )
+
+    accounts.pop(name, None)
+
+    save_accounts()
+
+    selected_session = None
+
+    await update.message.reply_text(
+        f"🗑 Account o‘chirildi:\n{name}"
+    )
+
+
+# =========================================================
+# PING
+# =========================================================
+
+async def ping_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    await update.message.reply_text(
+        "🏓 Pong 🟢\n"
+        "Bot2 ishlayapti."
+    )
+
+
+# =========================================================
+# GPS
+# =========================================================
+
+async def gps_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    keyboard = [
+        [
+            KeyboardButton(
+                "📍 Hozirgi joylashuvimni yuborish",
+                request_location=True
+            )
+        ]
+    ]
+
+    markup = ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+    await update.message.reply_text(
+        "📍 Hozirgi GPS joylashuvingizni olish uchun "
+        "pastdagi tugmani bosing.\n\n"
+        "Telegram telefoningizdagi GPS joylashuvni botga yuboradi.",
+        reply_markup=markup
+    )
+
+
+# =========================================================
+# LOCATION QABUL QILISH
+# =========================================================
+
+async def location_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    location = update.message.location
+
+    if not location:
+        return
+
+    latitude = location.latitude
+    longitude = location.longitude
+
+    maps_link = (
+        f"https://www.google.com/maps?q="
+        f"{latitude},{longitude}"
+    )
+
+    await update.message.reply_text(
+        "📍 JOYLASHUV QABUL QILINDI!\n\n"
+        f"🌐 Latitude: {latitude}\n"
+        f"🌐 Longitude: {longitude}\n\n"
+        f"🗺 Google Maps:\n{maps_link}"
+    )
+
+
+# =========================================================
+# SETTINGS
+# =========================================================
+
+async def settings_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "⚙️ Telegram Settings",
+                url="tg://settings/"
+            )
+        ]
+    ]
+
+    await update.message.reply_text(
+        "⚙️ Telegram sozlamalari:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# =========================================================
+# PRIVACY
+# =========================================================
+
+async def privacy_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "🔒 Privacy",
+                url="tg://settings/privacy"
+            )
+        ]
+    ]
+
+    await update.message.reply_text(
+        "🔒 Privacy sozlamalari:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# =========================================================
+# NOTIFICATIONS
+# =========================================================
+
+async def notifications_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "🔔 Notifications",
+                url="tg://settings/notifications"
+            )
+        ]
+    ]
+
+    await update.message.reply_text(
+        "🔔 Notifications:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# =========================================================
+# LANGUAGE
+# =========================================================
+
+async def language_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not is_owner(update):
+        await access_denied(update)
+        return
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "🌐 Language"e.reply_text(
             "📭 Sizda ulangan akkaunt yo'q.\n\n"
             "/login"
         )
