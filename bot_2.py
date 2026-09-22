@@ -489,8 +489,8 @@ async def info(
             "👤 ACCOUNT MA'LUMOTI\n\n"
 
             f"📁 Session: {selected}\n"
-            f"👤 Ism: {me.first_name or 'yo'q'}\n"
-            f"👤 Familiya: {me.last_name or 'yo'q'}\n"
+            f"👤 Ism: {me.first_name or 'yoq'}\n"
+            f"👤 Familiya: {me.last_name or 'yoq'}\n"
             f"🔹 Username: {username}\n"
             f"🆔 ID: {me.id}\n"
             f"📱 Telefon: {phone}"
