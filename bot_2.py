@@ -6,43 +6,42 @@ from telethon import TelegramClient, events
 
 
 # ============================================================
-# SOZLAMALAR
+# API SETTINGS
 # ============================================================
 
-API_ID = int(os.getenv("API_ID", "946606"))
-API_HASH = os.getenv("API_HASH", "a183e9d1503a9c6514bd086dd03aeb8e")
+API_ID = int(os.getenv("API_ID", "0"))
+API_HASH = os.getenv("API_HASH", "")
 
-# Bot2 uchun session papkasi
+
+# ============================================================
+# CHECK API
+# ============================================================
+
+if API_ID == 0:
+    raise ValueError(
+        "API_ID topilmadi. Render Environment Variables ichiga API_ID qo'shing."
+    )
+
+if not API_HASH:
+    raise ValueError(
+        "API_HASH topilmadi. Render Environment Variables ichiga API_HASH qo'shing."
+    )
+
+
+# ============================================================
+# SESSION PATH
+# ============================================================
+
 BASE_DIR = Path(__file__).resolve().parent
-SESSION_DIR = BASE_DIR / "bot2_1"
 
-SESSION_DIR.mkdir(
-    parents=True,
-    exist_ok=True
-)
+SESSION_DIR = BASE_DIR / "bot2_1"
+SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
 SESSION_NAME = SESSION_DIR / "bot2_1"
 
 
 # ============================================================
-# TEKSHIRISH
-# ============================================================
-
-if API_ID == 0:
-    raise ValueError(
-        "API_ID topilmadi. Render Environment Variables "
-        "ichiga API_ID qo'shing."
-    )
-
-if not API_HASH:
-    raise ValueError(
-        "API_HASH topilmadi. Render Environment Variables "
-        "ichiga API_HASH qo'shing."
-    )
-
-
-# ============================================================
-# USERBOT
+# TELEGRAM CLIENT
 # ============================================================
 
 client = TelegramClient(
@@ -53,13 +52,13 @@ client = TelegramClient(
 
 
 # ============================================================
-# YANGI XABAR
+# NEW MESSAGE
 # ============================================================
 
 @client.on(events.NewMessage)
 async def new_message(event):
 
-    # Faqat shaxsiy chatlar
+    # Faqat shaxsiy chat
     if event.is_private:
 
         text = event.raw_text.strip()
@@ -67,109 +66,62 @@ async def new_message(event):
         # Test komandasi
         if text.lower() == "ping":
 
-            await event.reply(
-                "Pong 🟢"
-            )
+            await event.reply("Pong 🟢")
 
 
 # ============================================================
-# USERBOT MAIN
+# USERBOT START
 # ============================================================
 
-async def main():
+async def start():
 
     print("=" * 50)
     print("BOT2 — TELEGRAM USERBOT")
     print("=" * 50)
 
     print()
-
-    print("Session:")
-    print(SESSION_NAME)
-
+    print(f"Session: {SESSION_NAME}")
     print()
 
-    print(
-        "Agar session mavjud bo'lmasa, "
-        "Telegram login ma'lumotlarini so'raydi."
-    )
+    print("UserBot ishga tushmoqda...")
 
-    print(
-        "Telefon raqam → Telegram kodi → 2FA parol"
-    )
-
-    print()
-
-    # UserBotni ishga tushirish
+    # Telegramga ulanish
     await client.start()
 
-    # Akkaunt ma'lumotlari
+    # User ma'lumotlarini olish
     me = await client.get_me()
 
     print()
     print("✅ BOT2 USERBOT ISHLADI")
     print()
 
-    print(
-        f"Ism: {me.first_name or ''}"
-    )
-
-    print(
-        f"Familiya: {me.last_name or ''}"
-    )
-
-    print(
-        f"Username: @{me.username}"
-        if me.username
-        else "Username: yo'q"
-    )
-
-    print(
-        f"ID: {me.id}"
-    )
-
-    print()
-    print("📡 Xabarlar kuzatilmoqda...")
-    print("🛑 To'xtatish: CTRL+C")
-    print()
-
-    # Doimiy ishlash
-    async def start():
-
-    print("=" * 50)
-    print("BOT2 — TELEGRAM USERBOT")
-    print("=" * 50)
-
-    await client.start()
-
-    me = await client.get_me()
-
-    print()
-    print("✅ BOT2 USERBOT ISHLADI")
     print(f"Ism: {me.first_name or ''}")
     print(f"Familiya: {me.last_name or ''}")
 
     if me.username:
         print(f"Username: @{me.username}")
+    else:
+        print("Username: yo'q")
 
     print(f"ID: {me.id}")
-    print("📡 Xabarlar kuzatilmoqda...")
 
-    await client.run_until_disconnected()
+    print()
+    print("📡 Xabarlar kuzatilmoqda...")
+    print()
+
+    # UserBotni doimiy ishlatish
     await client.run_until_disconnected()
 
 
 # ============================================================
-# START
+# DIRECT START
 # ============================================================
 
 if __name__ == "__main__":
 
     try:
 
-        asyncio.run(
-            main()
-        )
+        asyncio.run(start())
 
     except KeyboardInterrupt:
 
