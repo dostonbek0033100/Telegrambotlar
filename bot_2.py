@@ -1,875 +1,260 @@
 import asyncio
-import os
 from pathlib import Path
-
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient
 
+BOT2_TOKEN = "8992607786:AAHign6aDhQHvoAZhERw6PP8pdtclKYAB8U"
+API_ID = 946606
+API_HASH = "a183e9d1503a9c6514bd086dd03aeb8e"
+OWNER_ID = 1072547777
 
-# ============================================================
-# CONFIG
-# ============================================================
+DIR = Path("bot_2")
+DIR.mkdir(exist_ok=True)
 
-BOT2_TOKEN = os.getenv("BOT2_TOKEN")
-API_ID_RAW = os.getenv("API_ID")
-API_HASH = os.getenv("API_HASH")
-OWNER_ID_RAW = os.getenv("OWNER_ID")
-
-
-if not BOT2_TOKEN:
-    raise RuntimeError("BOT2_TOKEN topilmadi.")
-
-if not API_ID_RAW:
-    raise RuntimeError("API_ID topilmadi.")
-
-if not API_HASH:
-    raise RuntimeError("API_HASH topilmadi.")
-
-if not OWNER_ID_RAW:
-    raise RuntimeError("OWNER_ID topilmadi.")
-
-
-try:
-    API_ID = int(API_ID_RAW)
-except ValueError:
-    raise RuntimeError("API_ID raqam bo'lishi kerak.")
-
-
-try:
-    OWNER_ID = int(OWNER_ID_RAW)
-except ValueError:
-    raise RuntimeError("OWNER_ID raqam bo'lishi kerak.")
-
-
-# ============================================================
-# SESSION PAPKA
-# ============================================================
-
-BASE_DIR = Path(__file__).resolve().parent
-SESSION_DIR = BASE_DIR / "bot_2"
-
-SESSION_DIR.mkdir(
-    parents=True,
-    exist_ok=True,
-)
-
-
-# ============================================================
-# GLOBAL
-# ============================================================
-
+# Aktiv akkauntlarni ushlab turish uchun dict
 clients = {}
 
-selected = None
+def ok(u: Update):
+    return u.effective_user and u.effective_user.id == OWNER_ID
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    await update.message.reply_text("✅ <b>Bot2 ishlayapti!</b>\nBarcha buyruqlar: /help", parse_mode="HTML")
 
-# ============================================================
-# OWNER TEKSHIRISH
-# ============================================================
-
-def is_owner(update: Update) -> bool:
-    user = update.effective_user
-
-    if not user:
-        return False
-
-    return user.id == OWNER_ID
-
-
-# ============================================================
-# START
-# ============================================================
-
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(update):
-        return
-
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
     await update.message.reply_text(
-        "✅ Bot2 ishlayapti!\n\n"
-        "/help"
+        "🛠 <b>Asosiy buyruqlar:</b>\n\n"
+        "<code>/login</code> — Yangi session ulash\n"
+        "<code>/accounts</code> — Ulangan akkauntlar ro'yxati\n"
+        "<code>/use NOMI</code> — Akkauntni tanlash\n"
+        "<code>/status</code> — Tanlangan akkaunt holati\n"
+        "<code>/id</code> — Telegram ID'ni ko'rish\n"
+        "<code>/info</code> — Akkaunt ma'lumotlari\n"
+        "<code>/logout</code> — Akkauntni tizimdan o'chirish\n"
+        "<code>/ping</code> — Bot ishlashini tekshirish\n"
+        "<code>/gps</code> — GPS manzil jo'natish",
+        parse_mode="HTML"
     )
 
+async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    context.user_data["login"] = True
+    await update.message.reply_text("📁 Iltimos, <b>.session</b> faylini yuboring.", parse_mode="HTML")
 
-# ============================================================
-# HELP
-# ============================================================
-
-async def help_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(update):
+async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update) or not context.user_data.get("login"):
         return
 
-    text = (
-        "🤖 BOT2 BUYRUQLARI\n\n"
+    f = update.message.document
 
-        "/login — .session ulash\n"
-        "/accounts — accountlar\n"
-        "/use NOMI — account tanlash\n"
-        "/status — status\n"
-        "/id — Telegram ID\n"
-        "/info — account ma'lumoti\n"
-        "/logout — accountni o'chirish\n"
-        "/ping — test\n"
-        "/gps — joylashuv yuborish\n"
-    )
-
-    await update.message.reply_text(text)
-
-
-# ============================================================
-# LOGIN
-# ============================================================
-
-async def login(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(update):
+    if not f.file_name.endswith(".session"):
+        await update.message.reply_text("❌ Faqat <b>.session</b> formatidagi fayl qabul qilinadi!", parse_mode="HTML")
         return
 
-    context.user_data["waiting_session"] = True
+    context.user_data["login"] = False
+    name = Path(f.file_name).stem
+    path = DIR / f"{name}.session"
 
-    await update.message.reply_text(
-        "📁 .session faylini yuboring."
-    )
+    tgfile = await context.bot.get_file(f.file_id)
+    await tgfile.download_to_drive(str(path))
 
+    msg = await update.message.reply_text("⏳ Ulanmoqda, kuting...")
 
-# ============================================================
-# SESSION QABUL QILISH
-# ============================================================
-
-async def receive_session(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(update):
-        return
-
-    if not context.user_data.get("waiting_session"):
-        return
-
-    document = update.message.document
-
-    if not document:
-        return
-
-    filename = document.file_name or ""
-
-    if not filename.lower().endswith(".session"):
-        await update.message.reply_text(
-            "❌ Faqat .session fayl yuboring."
-        )
-        return
-
-    context.user_data["waiting_session"] = False
-
-    name = Path(filename).stem.strip()
-
-    if not name:
-        await update.message.reply_text(
-            "❌ Session nomi noto'g'ri."
-        )
-        return
-
-    session_file = SESSION_DIR / f"{name}.session"
-
-    # Eski client bo'lsa yopamiz
-    old_client = clients.get(name)
-
-    if old_client:
-        try:
-            await old_client.disconnect()
-        except Exception:
-            pass
-
-        clients.pop(name, None)
+    client = TelegramClient(str(path.with_suffix("")), API_ID, API_HASH)
 
     try:
-
-        # Telegram faylini yuklab olish
-        tg_file = await context.bot.get_file(
-            document.file_id
-        )
-
-        await tg_file.download_to_drive(
-            str(session_file)
-        )
-
-        # Telethon .session faylini ochish
-        client = TelegramClient(
-            str(session_file.with_suffix("")),
-            API_ID,
-            API_HASH,
-        )
-
         await client.connect()
 
-        # Login tekshirish
-        authorized = await client.is_user_authorized()
-
-        if not authorized:
-
+        if not await client.is_user_authorized():
             await client.disconnect()
-
-            session_file.unlink(
-                missing_ok=True
-            )
-
-            await update.message.reply_text(
-                "❌ Session yaroqsiz.\n"
-                "Telegram akkauntiga kirilmagan."
-            )
-
+            path.unlink(missing_ok=True)
+            await msg.edit_text("❌ Session yaroqsiz yoki avtorizatsiyadan o'tmagan!")
             return
 
-        # Account ma'lumoti
         me = await client.get_me()
-
         clients[name] = client
+        context.user_data["selected"] = name  # Yuklangan akkauntni avtomatik tanlab qo'yamiz
 
-        await update.message.reply_text(
-            "✅ ACCOUNT ULANDI!\n\n"
-
-            f"📁 Session: {name}\n"
-            f"👤 Ism: {me.first_name or 'Nomaʼlum'}\n"
-            f"🆔 ID: {me.id}\n"
-            f"📱 Telefon: {me.phone or 'yashirilgan'}\n\n"
-
-            f"Accountni tanlash:\n"
-            f"/use {name}"
+        await msg.edit_text(
+            f"✅ <b>Muvaffaqiyatli ulandi!</b>\n\n"
+            f"📁 Sessiya: <b>{name}</b>\n"
+            f"👤 Ism: {me.first_name or 'Yo‘q'}\n"
+            f"🆔 ID: <code>{me.id}</code>\n\n"
+            f"<i>Ushbu account avtomatik tanlandi.</i>",
+            parse_mode="HTML"
         )
 
     except Exception as e:
+        await msg.edit_text(f"❌ Xatolik yuz berdi: {e}")
 
-        session_file.unlink(
-            missing_ok=True
-        )
-
-        await update.message.reply_text(
-            "❌ Session ulashda xato:\n\n"
-            f"{type(e).__name__}: {e}"
-        )
-
-
-# ============================================================
-# ACCOUNTS
-# ============================================================
-
-async def accounts(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(update):
-        return
+async def accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
 
     if not clients:
-
-        await update.message.reply_text(
-            "📭 Hozircha account yo'q."
-        )
-
+        await update.message.reply_text("📭 Hozircha akkauntlar yo'q.")
         return
 
-    lines = []
+    text = "👤 <b>Sizning akkauntlaringiz:</b>\n\n"
+    for name in clients:
+        # Tanlangan akkauntga ✅ belgisi qo'yiladi
+        sel = "✅" if context.user_data.get("selected") == name else "🔹"
+        text += f"{sel} <code>{name}</code>\n"
+    
+    await update.message.reply_text(text, parse_mode="HTML")
 
-    for name, client in clients.items():
-
-        if client.is_connected():
-            icon = "🟢"
-        else:
-            icon = "🔴"
-
-        selected_icon = ""
-
-        if name == selected:
-            selected_icon = " ⭐"
-
-        lines.append(
-            f"{icon} {name}{selected_icon}"
-        )
-
-    await update.message.reply_text(
-        "👤 ACCOUNTLAR\n\n"
-        + "\n".join(lines)
-    )
-
-
-# ============================================================
-# USE
-# ============================================================
-
-async def use(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    global selected
-
-    if not is_owner(update):
-        return
+async def use(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
 
     if not context.args:
-
-        await update.message.reply_text(
-            "/use SESSION_NOMI"
-        )
-
+        await update.message.reply_text("⚠️ <b>Foydalanish:</b> <code>/use SESSION_NOMI</code>", parse_mode="HTML")
         return
 
     name = context.args[0]
 
     if name not in clients:
-
-        await update.message.reply_text(
-            "❌ Account topilmadi.\n\n"
-            "/accounts"
-        )
-
+        await update.message.reply_text("❌ Bunday akkaunt topilmadi!")
         return
 
-    selected = name
+    context.user_data["selected"] = name
+    await update.message.reply_text(f"✅ <b>{name}</b> akkaunti tanlandi!", parse_mode="HTML")
 
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+
+    selected = context.user_data.get("selected")
+    if not selected:
+        await update.message.reply_text("❌ Akkaunt tanlanmagan. Iltimos, <code>/use</code> orqali tanlang.", parse_mode="HTML")
+        return
+
+    c = clients.get(selected)
+    
     await update.message.reply_text(
-        f"✅ Account tanlandi:\n\n"
-        f"📁 {name}"
+        f"📡 <b>{selected}</b> holati:\n"
+        f"{'🟢 Ulangan (Onlayn)' if c and c.is_connected() else '🔴 Ulanmagan (Oflayn)'}",
+        parse_mode="HTML"
     )
 
+async def tg_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
 
-# ============================================================
-# STATUS
-# ============================================================
-
-async def status(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(update):
+    selected = context.user_data.get("selected")
+    if not selected or selected not in clients:
+        await update.message.reply_text("❌ Akkaunt tanlanmagan.")
         return
 
-    if not selected:
+    me = await clients[selected].get_me()
+    await update.message.reply_text(f"🆔 Akkaunt ID'si: <code>{me.id}</code>", parse_mode="HTML")
 
-        await update.message.reply_text(
-            "❌ Account tanlanmagan."
-        )
+async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
 
+    selected = context.user_data.get("selected")
+    if not selected or selected not in clients:
+        await update.message.reply_text("❌ Akkaunt tanlanmagan.")
         return
 
-    client = clients.get(selected)
-
-    if not client:
-
-        await update.message.reply_text(
-            "❌ Account topilmadi."
-        )
-
-        return
-
-    if client.is_connected():
-
-        status_text = "🟢 Ulangan"
-
-    else:
-
-        status_text = "🔴 Ulanmagan"
-
+    me = await clients[selected].get_me()
     await update.message.reply_text(
-        f"📡 Account: {selected}\n"
-        f"{status_text}"
+        f"👤 Ism: {me.first_name or ''}\n"
+        f"🔹 User: @{me.username or 'yo‘q'}\n"
+        f"🆔 ID: <code>{me.id}</code>\n"
+        f"📱 Raqam: +{me.phone or 'yashirilgan'}",
+        parse_mode="HTML"
     )
 
+async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
 
-# ============================================================
-# TELEGRAM ID
-# ============================================================
-
-async def tg_id(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(update):
-        return
-
-    if not selected:
-
-        await update.message.reply_text(
-            "❌ Avval account tanlang."
-        )
-
-        return
-
-    client = clients.get(selected)
-
-    if not client:
-
-        await update.message.reply_text(
-            "❌ Account topilmadi."
-        )
-
-        return
-
-    try:
-
-        if not client.is_connected():
-            await client.connect()
-
-        me = await client.get_me()
-
-        await update.message.reply_text(
-            f"🆔 Telegram ID:\n\n"
-            f"{me.id}"
-        )
-
-    except Exception as e:
-
-        await update.message.reply_text(
-            f"❌ Xato:\n{e}"
-        )
-
-
-# ============================================================
-# INFO
-# ============================================================
-
-async def info(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(update):
-        return
-
-    if not selected:
-
-        await update.message.reply_text(
-            "❌ Avval account tanlang."
-        )
-
-        return
-
-    client = clients.get(selected)
-
-    if not client:
-
-        await update.message.reply_text(
-            "❌ Account topilmadi."
-        )
-
-        return
-
-    try:
-
-        if not client.is_connected():
-            await client.connect()
-
-        me = await client.get_me()
-
-        username = (
-            f"@{me.username}"
-            if me.username
-            else "yo'q"
-        )
-
-        phone = (
-            me.phone
-            if me.phone
-            else "yashirilgan"
-        )
-
-        await update.message.reply_text(
-            "👤 ACCOUNT MA'LUMOTI\n\n"
-
-            f"📁 Session: {selected}\n"
-            f"👤 Ism: {me.first_name or 'yoq'}\n"
-            f"👤 Familiya: {me.last_name or 'yoq'}\n"
-            f"🔹 Username: {username}\n"
-            f"🆔 ID: {me.id}\n"
-            f"📱 Telefon: {phone}"
-        )
-
-    except Exception as e:
-
-        await update.message.reply_text(
-            f"❌ Xato:\n{e}"
-        )
-
-
-# ============================================================
-# LOGOUT
-# ============================================================
-
-async def logout(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    global selected
-
-    if not is_owner(update):
-        return
-
-    if not selected:
-
-        await update.message.reply_text(
-            "❌ Account tanlanmagan."
-        )
-
+    selected = context.user_data.get("selected")
+    if not selected or selected not in clients:
+        await update.message.reply_text("❌ Akkaunt tanlanmagan.")
         return
 
     name = selected
+    await clients[name].disconnect()
+    del clients[name]
 
-    client = clients.get(name)
+    (DIR / f"{name}.session").unlink(missing_ok=True)
+    context.user_data["selected"] = None
 
-    if client:
+    await update.message.reply_text(f"🗑 <b>{name}</b> akkaunti tizimdan o'chirildi.", parse_mode="HTML")
 
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if ok(update):
+        await update.message.reply_text("🏓 Pong 🟢 Bot faol holatda!")
+
+async def gps(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+
+    kb = [[KeyboardButton("📍 Joylashuvni yuborish", request_location=True)]]
+    await update.message.reply_text(
+        "GPS manzilni yuborish uchun pastdagi tugmani bosing:",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True, one_time_keyboard=True)
+    )
+
+async def location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+
+    x = update.message.location
+    link = f"https://www.google.com/maps?q={x.latitude},{x.longitude}"
+
+    await update.message.reply_text(
+        f"📍 <b>Koordinatalar:</b>\n{x.latitude}, {x.longitude}\n\n"
+        f"🗺 <a href='{link}'>Google Maps orqali ko'rish</a>",
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
+
+# Bot ishga tushayotganda oldin kiritilgan .session fayllarini orqaga qaytarib ishga tushirish uchun
+async def load_sessions(app: Application):
+    print("⏳ Sessiyalar tekshirilmoqda...")
+    for p in DIR.glob("*.session"):
+        name = p.stem
+        client = TelegramClient(str(p.with_suffix("")), API_ID, API_HASH)
         try:
-            await client.disconnect()
-        except Exception:
-            pass
-
-        clients.pop(name, None)
-
-    session_file = (
-        SESSION_DIR / f"{name}.session"
-    )
-
-    session_file.unlink(
-        missing_ok=True
-    )
-
-    selected = None
-
-    await update.message.reply_text(
-        f"🗑 Account o'chirildi:\n\n"
-        f"{name}"
-    )
-
-
-# ============================================================
-# PING
-# ============================================================
-
-async def ping(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(update):
-        return
-
-    await update.message.reply_text(
-        "🏓 Pong 🟢"
-    )
-
-
-# ============================================================
-# GPS
-# ============================================================
-
-async def gps(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(update):
-        return
-
-    keyboard = [
-        [
-            KeyboardButton(
-                "📍 Joylashuvni yuborish",
-                request_location=True,
-            )
-        ]
-    ]
-
-    markup = ReplyKeyboardMarkup(
-        keyboard,
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-
-    await update.message.reply_text(
-        "📍 Joylashuvni yuborish uchun "
-        "tugmani bosing:",
-        reply_markup=markup,
-    )
-
-
-# ============================================================
-# LOCATION
-# ============================================================
-
-async def location(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(update):
-        return
-
-    location_data = update.message.location
-
-    if not location_data:
-        return
-
-    latitude = location_data.latitude
-    longitude = location_data.longitude
-
-    maps_url = (
-        "https://www.google.com/maps"
-        f"?q={latitude},{longitude}"
-    )
-
-    await update.message.reply_text(
-        "📍 JOYLASHUV\n\n"
-
-        f"Latitude: {latitude}\n"
-        f"Longitude: {longitude}\n\n"
-
-        f"🗺 Google Maps:\n"
-        f"{maps_url}"
-    )
-
-
-# ============================================================
-# OLD SESSIONLARNI YUKLASH
-# ============================================================
-
-async def load_sessions():
-    """
-    Server qayta ishga tushganda
-    mavjud .session fayllarini avtomatik
-    qayta ulaydi.
-    """
-
-    for session_file in SESSION_DIR.glob(
-        "*.session"
-    ):
-
-        name = session_file.stem
-
-        if name in clients:
-            continue
-
-        client = TelegramClient(
-            str(session_file.with_suffix("")),
-            API_ID,
-            API_HASH,
-        )
-
-        try:
-
             await client.connect()
-
-            authorized = (
-                await client.is_user_authorized()
-            )
-
-            if authorized:
-
+            if await client.is_user_authorized():
                 clients[name] = client
-
-                print(
-                    f"✅ Session yuklandi: {name}"
-                )
-
+                print(f"✅ Yuklandi: {name}")
             else:
-
                 await client.disconnect()
-
-                print(
-                    f"⚠️ Session yaroqsiz: {name}"
-                )
-
+                print(f"❌ Yaroqsiz (o'chirildi): {name}")
         except Exception as e:
-
-            try:
-                await client.disconnect()
-            except Exception:
-                pass
-
-            print(
-                f"❌ Session yuklanmadi: "
-                f"{name} — {e}"
-            )
+            print(f"❌ Xatolik ({name}): {e}")
+    print("🚀 BOT TO'LIQ ISHGA TUSHDI")
 
 
-# ============================================================
-# SHUTDOWN
-# ============================================================
+def main():
+    # post_init yordamida bot ishga tushishidan oldin sessiyalarni yuklaymiz
+    app = Application.builder().token(BOT2_TOKEN).post_init(load_sessions).build()
 
-async def shutdown_clients():
+    cmds = {
+        "start": start,
+        "help": help_cmd,
+        "login": login,
+        "accounts": accounts,
+        "use": use,
+        "status": status,
+        "id": tg_id,
+        "info": info,
+        "logout": logout,
+        "ping": ping,
+        "gps": gps,
+    }
 
-    for name, client in list(
-        clients.items()
-    ):
+    for name, func in cmds.items():
+        app.add_handler(CommandHandler(name, func))
 
-        try:
+    # Xabarlar ushlagichlari
+    app.add_handler(MessageHandler(filters.Document.ALL, session))
+    app.add_handler(MessageHandler(filters.LOCATION, location))
 
-            await client.disconnect()
+    # Standart asinxron ishga tushirish (xatoliksiz va xavfsiz mexanizm)
+    app.run_polling()
 
-        except Exception as e:
-
-            print(
-                f"⚠️ {name} yopishda xato: {e}"
-            )
-
-    clients.clear()
-
-
-# ============================================================
-# MAIN
-# ============================================================
-
-async def main():
-
-    application = (
-        Application.builder()
-        .token(BOT2_TOKEN)
-        .build()
-    )
-
-    # Commands
-    application.add_handler(
-        CommandHandler(
-            "start",
-            start,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "help",
-            help_cmd,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "login",
-            login,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "accounts",
-            accounts,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "use",
-            use,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "status",
-            status,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "id",
-            tg_id,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "info",
-            info,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "logout",
-            logout,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "ping",
-            ping,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "gps",
-            gps,
-        )
-    )
-
-    # .session fayl
-    application.add_handler(
-        MessageHandler(
-            filters.Document.ALL,
-            receive_session,
-        )
-    )
-
-    # GPS
-    application.add_handler(
-        MessageHandler(
-            filters.LOCATION,
-            location,
-        )
-    )
-
-    # Old sessionlarni yuklash
-    await load_sessions()
-
-    # Botni ishga tushirish
-    await application.initialize()
-    await application.start()
-
-    await application.updater.start_polling(
-        drop_pending_updates=True
-    )
-
-    print(
-        "================================"
-    )
-
-    print(
-        "✅ BOT2 ISHLADI"
-    )
-
-    print(
-        "================================"
-    )
-
-    try:
-
-        await asyncio.Event().wait()
-
-    finally:
-
-        await application.updater.stop()
-
-        await shutdown_clients()
-
-        await application.stop()
-        await application.shutdown()
-
-
-# ============================================================
-# START
-# ============================================================
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
     
