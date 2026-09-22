@@ -4,7 +4,7 @@ from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient
 
-BOT2_TOKEN = "8992607786:AAG-Ii8k1yAr-FB5DXPMsSVcITczQ0uEbq8"
+BOT2_TOKEN = "8992607786:AAHign6aDhQHvoAZhERw6PP8pdtclKYAB8U"
 API_ID = 946606
 API_HASH = "a183e9d1503a9c6514bd086dd03aeb8e"
 OWNER_ID = 1072547777
