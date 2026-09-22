@@ -1,41 +1,37 @@
 import os
 import asyncio
 from aiohttp import web
-from aiogram import Bot, Dispatcher
 
-TOKEN = os.getenv("BOT_TOKEN")
-
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
+import bot_1
+#import bot_2
+#import bot_3
 
 
-async def handle(request):
-    return web.Response(text="Bot ishlayapti!")
+async def health_check(request):
+    return web.Response(text="Telegram botlar ishlayapti!")
 
 
-async def start_web():
+async def start_web_server():
     app = web.Application()
-    app.router.add_get("/", handle)
+    app.router.add_get("/", health_check)
 
-    port = int(os.getenv("PORT", 10000))
+    port = int(os.environ.get("PORT", 10000))
+
     runner = web.AppRunner(app)
     await runner.setup()
 
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-    print(f"Web server {port} portda ishlayapti")
-
-
-async def start_bot():
-    print("Telegram bot ishga tushdi!")
-    await dp.start_polling(bot)
+    print(f"Web server {port}-portda ishlayapti")
 
 
 async def main():
     await asyncio.gather(
-        start_web(),
-        start_bot()
+        start_web_server(),
+        bot_1.start(),
+        #bot_2.start(),
+        #bot_3.start()
     )
 
 
