@@ -1,5 +1,4 @@
 import asyncio
-import aiohttp
 from pathlib import Path
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
@@ -19,33 +18,24 @@ clients = {}
 def ok(u: Update):
     return u.effective_user and u.effective_user.id == OWNER_ID
 
-# ================= USERBOT (AKKAUNT) UCHUN HANDLER =================
+# ================= USERBOT (AKKAUNT) FUNKSIYALARI =================
 
 async def userbot_gps_handler(event):
-    # /gps yozilganda zudlik bilan ishlaydi
-    msg = await event.reply("⏳ <i>Lokatsiya olinmoqda...</i>", parse_mode="html")
+    # O'zingiz xohlagan joyning koordinatalarini shu yerga kiritasiz (Hozir Farg'ona kiritilgan)
+    lat = 40.3842
+    lon = 71.7843
     
-    try:
-        # IP orqali lokatsiyani aniqlash (yoki qotirilgan lokatsiyadan foydalaniladi)
-        async with aiohttp.ClientSession() as session:
-            async with session.get("http://ip-api.com/json/") as response:
-                data = await response.json()
-                # Agar IP ishlamay qolsa, avtomatik Qo'qon koordinatalari olinadi
-                lat = data.get("lat", 40.53) 
-                lon = data.get("lon", 70.93)
-        
-        # Telegram xarita obyekti
-        geo = InputMediaGeoPoint(InputGeoPoint(lat, lon))
-        
-        await msg.delete()
-        # Hech qanday tugmasiz to'g'ridan-to'g'ri xaritani yuborish
-        await event.respond(file=geo)
-        
-    except Exception as e:
-        await msg.edit(f"❌ Xatolik yuz berdi:\n{e}")
+    # Telegram xarita obyekti
+    geo = InputMediaGeoPoint(InputGeoPoint(lat, lon))
+    
+    # Siz yozgan "/gps" xabarini o'chirib tashlaydi
+    await event.delete()
+    
+    # O'rniga xaritani jo'natadi
+    await event.respond(file=geo)
 
 def add_userbot_handlers(client: TelegramClient):
-    # Faqat o'zingiz (outgoing=True) yozgan /gps ni ushlaydi
+    # outgoing=True -> faqat siz (akkaunt egasi) yozganda ishlaydi
     client.add_event_handler(userbot_gps_handler, events.NewMessage(pattern=r"(?i)^/gps", outgoing=True))
 
 # ================= BOT KOMANDALARI =================
@@ -66,7 +56,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/info — Akkaunt ma'lumoti\n"
         "/logout — Akkauntni o'chirish\n"
         "/ping — Ping tekshirish\n\n"
-        "<i>Eslatma: /gps komandasi endi faqat ulangan akkauntlarda ishlaydi.</i>",
+        "<i>Eslatma: /gps komandasini endi ulangan akkauntingiz orqali istalgan chatda ishlatsangiz bo'ladi.</i>",
         parse_mode="HTML"
     )
 
@@ -103,7 +93,7 @@ async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         me = await client.get_me()
         
-        # Userbot handlerlarini ulash
+        # Userbot handlerlarini ulash va fon rejimida eshitishni boshlash
         add_userbot_handlers(client)
         asyncio.create_task(client.run_until_disconnected())
         
@@ -182,7 +172,6 @@ async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if ok(update): await update.message.reply_text("🏓 Pong 🟢 Bot_2 faol!")
 
 # ================= SESSIYALARNI TIKLASH =================
-
 async def load_sessions(app: Application):
     for p in DIR.glob("*.session"):
         name = p.stem
@@ -198,11 +187,11 @@ async def load_sessions(app: Application):
         except Exception: pass
 
 # ================= MAIN.PY CHAQIRADIGAN FUNKSIYA =================
-
 async def start():
     print("🚀 Bot_2 ishga tushirilmoqda...")
     app = Application.builder().token(BOT2_TOKEN).post_init(load_sessions).build()
 
+    # Handlelarni qo'shamiz
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("login", login))
@@ -215,11 +204,13 @@ async def start():
     app.add_handler(CommandHandler("ping", ping))
     app.add_handler(MessageHandler(filters.Document.ALL, session))
 
+    # Botni ishga tushiramiz (drop_pending_updates Render uchun muhim)
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
 
     print("✅ Bot_2 muvaffaqiyatli ishlayapti!")
     
+    # main.py da gather uzilib qolmasligi uchun cheksiz loop
     while True:
         await asyncio.sleep(3600)
