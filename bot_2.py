@@ -23,12 +23,8 @@ async def keep_online_task(client):
     try:
         while True:
             if client.is_connected():
-                # Onlayn statusini yangilash
                 await client(functions.account.UpdateStatusRequest(offline=False))
-                # Ulanishni uxlab qolishdan saqlash uchun kichik signal
                 await client(functions.updates.GetStateRequest())
-            
-            # Har 60 soniyada takrorlaydi (Kafolatlangan onlayn)
             await asyncio.sleep(60) 
     except asyncio.CancelledError:
         pass
@@ -40,9 +36,8 @@ async def userbot_online_on(event):
     if hasattr(client, 'online_task') and client.online_task:
         await event.edit("🟢 24/7 Onlayn rejim allaqachon yoqilgan.")
         return
-    
     client.online_task = asyncio.create_task(keep_online_task(client))
-    await event.edit("🟢 <b>24/7 Onlayn rejim yoqildi!</b>\nEndi akkaunt doim tarmoqda bo'ladi.", parse_mode="html")
+    await event.edit("🟢 <b>24/7 Onlayn rejim yoqildi!</b>", parse_mode="html")
 
 async def userbot_online_off(event):
     client = event.client
@@ -56,9 +51,56 @@ async def userbot_online_off(event):
     else:
         await event.edit("⚠️ Onlayn rejim yoqilmagan edi.")
 
+# --- AVTO JAVOB FUNKSIYALARI ---
+
+async def userbot_auto_on(event):
+    event.client.auto_reply = True
+    await event.edit("🤖 <b>Avto-javob tizimi yoqildi!</b>\nEndi shaxsiy xabarlarga avtomatik javob qaytariladi.", parse_mode="html")
+
+async def userbot_auto_off(event):
+    event.client.auto_reply = False
+    await event.edit("💤 <b>Avto-javob tizimi o'chirildi.</b>", parse_mode="html")
+
+async def auto_responder(event):
+    client = event.client
+    # Agar avto-javob o'chiq bo'lsa, ishlamaydi
+    if not getattr(client, 'auto_reply', False):
+        return
+    
+    # Faqat shaxsiy yozishmalarda ishlaydi (guruhlarda emas)
+    if not event.is_private:
+        return
+        
+    sender = await event.get_sender()
+    # O'zingizga yoki boshqa botlarga javob qaytarmasligi uchun
+    if sender is None or sender.bot or sender.is_self:
+        return
+
+    text = event.raw_text.lower()
+    
+    # QAYSI SO'ZGA QANDAY JAVOB BERISHI SHU YERDA SOZLANADI:
+    if "salom" in text:
+        await event.reply("Salom! Men hozir band edim, xabaringizni o'qib albatta javob beraman. 🤖")
+    elif "?" in text or "savol" in text:
+        await event.reply("Yaxshi savol! Lekin men hozir tarmoqda emasman. Kirishim bilan batafsil javob yozaman. 🤖")
+    elif "qandaysan" in text or "qalaysan" in text or "yaxshimisiz" in text:
+        await event.reply("Rahmat, yaxshi. O'zingiz qandaysiz? Hozircha bu avto-javob. 🤖")
+    elif "qayerdasan" in text or "manzil" in text:
+        await event.reply("Hozircha tarmoqda emasman, keyinroq o'zim aloqaga chiqaman. 🤖")
+    else:
+        # Boshqa ixtiyoriy xabarlar uchun umumiy javob (buni o'chirib qo'yishingiz ham mumkin)
+        pass
+
 def add_userbot_handlers(client: TelegramClient):
     client.add_event_handler(userbot_online_on, events.NewMessage(pattern=r"(?i)^/online_on", outgoing=True))
     client.add_event_handler(userbot_online_off, events.NewMessage(pattern=r"(?i)^/online_off", outgoing=True))
+    
+    # Avto-javob komandalari
+    client.add_event_handler(userbot_auto_on, events.NewMessage(pattern=r"(?i)^/auto_on", outgoing=True))
+    client.add_event_handler(userbot_auto_off, events.NewMessage(pattern=r"(?i)^/auto_off", outgoing=True))
+    
+    # Kelayotgan xabarlarni o'qiydigan handler
+    client.add_event_handler(auto_responder, events.NewMessage(incoming=True))
 
 # ================= BOT KOMANDALARI =================
 
@@ -78,6 +120,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/info — Akkaunt ma'lumoti\n"
         "/online_on — 24/7 Onlayn yoqish\n"
         "/online_off — 24/7 Onlayn o'chirish\n"
+        "/auto_on — Avto-javobni yoqish\n"
+        "/auto_off — Avto-javobni o'chirish\n"
         "/logout — Akkauntni o'chirish\n"
         "/ping — Ping tekshirish",
         parse_mode="HTML"
@@ -115,8 +159,8 @@ async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         me = await client.get_me()
+        client.auto_reply = False # Boshlanishida avto javob o'chiq bo'ladi
         
-        # Handlerlarni ulash
         add_userbot_handlers(client)
         
         asyncio.create_task(client.run_until_disconnected())
@@ -207,6 +251,22 @@ async def online_off_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(f"⚠️ <b>{selected}</b> onlayn rejimi yoqilmagan edi.", parse_mode="HTML")
 
+async def auto_on_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    selected = context.user_data.get("selected")
+    if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
+    
+    clients[selected].auto_reply = True
+    await update.message.reply_text(f"🤖 <b>{selected}</b> uchun avto-javob yoqildi!", parse_mode="HTML")
+
+async def auto_off_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    selected = context.user_data.get("selected")
+    if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
+    
+    clients[selected].auto_reply = False
+    await update.message.reply_text(f"💤 <b>{selected}</b> uchun avto-javob o'chirildi.", parse_mode="HTML")
+
 async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
     selected = context.user_data.get("selected")
@@ -233,6 +293,7 @@ async def load_sessions(app: Application):
         try:
             await client.connect()
             if await client.is_user_authorized():
+                client.auto_reply = False
                 add_userbot_handlers(client)
                 asyncio.create_task(client.run_until_disconnected())
                 clients[name] = client
@@ -241,7 +302,6 @@ async def load_sessions(app: Application):
         except Exception: pass
 
 async def start():
-    print("🚀 Bot_2 ishga tushirilmoqda...")
     app = Application.builder().token(BOT2_TOKEN).post_init(load_sessions).build()
 
     app.add_handler(CommandHandler("start", start_cmd))
@@ -254,6 +314,8 @@ async def start():
     app.add_handler(CommandHandler("info", info))
     app.add_handler(CommandHandler("online_on", online_on_cmd))
     app.add_handler(CommandHandler("online_off", online_off_cmd))
+    app.add_handler(CommandHandler("auto_on", auto_on_cmd))
+    app.add_handler(CommandHandler("auto_off", auto_off_cmd))
     app.add_handler(CommandHandler("logout", logout))
     app.add_handler(CommandHandler("ping", ping))
     
@@ -262,8 +324,6 @@ async def start():
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
-
-    print("✅ Bot_2 muvaffaqiyatli ishlayapti!")
     
     while True:
         await asyncio.sleep(3600)
