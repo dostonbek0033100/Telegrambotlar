@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-from telethon import TelegramClient
+from telethon import TelegramClient, events, functions
 
 BOT2_TOKEN = "8992607786:AAHign6aDhQHvoAZhERw6PP8pdtclKYAB8U"
 API_ID = 946606
@@ -16,6 +16,47 @@ clients = {}
 
 def ok(u: Update):
     return u.effective_user and u.effective_user.id == OWNER_ID
+
+# ================= USERBOT FUNKSIYALARI (AKKAUNT ICHIDA) =================
+
+async def keep_online_task(client):
+    try:
+        while True:
+            # Telegram'ga "men onlaynman" degan signalni yuborish
+            await client(functions.account.UpdateStatusRequest(offline=False))
+            await asyncio.sleep(200) # Har 3-4 daqiqada signalni yangilaydi
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        pass
+
+async def userbot_online_on(event):
+    client = event.client
+    if hasattr(client, 'online_task') and client.online_task:
+        await event.edit("🟢 24/7 Onlayn rejim allaqachon yoqilgan.")
+        return
+    
+    client.online_task = asyncio.create_task(keep_online_task(client))
+    await event.edit("🟢 <b>24/7 Onlayn rejim yoqildi!</b>\nEndi akkaunt doim tarmoqda bo'ladi.", parse_mode="html")
+
+async def userbot_online_off(event):
+    client = event.client
+    if hasattr(client, 'online_task') and client.online_task:
+        client.online_task.cancel()
+        client.online_task = None
+        try:
+            # Onlayn signalni to'xtatib, oflaynga o'tish
+            await client(functions.account.UpdateStatusRequest(offline=True))
+        except: pass
+        await event.edit("🔴 <b>24/7 Onlayn rejim o'chirildi.</b>", parse_mode="html")
+    else:
+        await event.edit("⚠️ Onlayn rejim yoqilmagan edi.")
+
+def add_userbot_handlers(client: TelegramClient):
+    client.add_event_handler(userbot_online_on, events.NewMessage(pattern=r"(?i)^/online_on", outgoing=True))
+    client.add_event_handler(userbot_online_off, events.NewMessage(pattern=r"(?i)^/online_off", outgoing=True))
+
+# ================= DEPLOYER BOT KOMANDALARI =================
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
@@ -31,6 +72,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/status — Akkaunt holati\n"
         "/id — Telegram ID\n"
         "/info — Akkaunt ma'lumoti\n"
+        "/online_on — 24/7 Onlayn yoqish\n"
+        "/online_off — 24/7 Onlayn o'chirish\n"
         "/logout — Akkauntni o'chirish\n"
         "/ping — Ping tekshirish",
         parse_mode="HTML"
@@ -68,6 +111,9 @@ async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         me = await client.get_me()
+        
+        # Userbot uchun handlerlarni ulash
+        add_userbot_handlers(client)
         
         asyncio.create_task(client.run_until_disconnected())
         clients[name] = client
@@ -129,12 +175,44 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     me = await clients[selected].get_me()
     await update.message.reply_text(f"👤 {me.first_name or ''}\n🔹 @{me.username or 'yo‘q'}\n🆔 <code>{me.id}</code>\n📱 +{me.phone or 'yashirilgan'}", parse_mode="HTML")
 
+async def online_on_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    selected = context.user_data.get("selected")
+    if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
+    
+    client = clients[selected]
+    if hasattr(client, 'online_task') and client.online_task:
+        return await update.message.reply_text(f"⚠️ <b>{selected}</b> allaqachon 24/7 onlayn rejimida.", parse_mode="HTML")
+        
+    client.online_task = asyncio.create_task(keep_online_task(client))
+    await update.message.reply_text(f"🟢 <b>{selected}</b> endi doimiy onlayn bo'ladi!", parse_mode="HTML")
+
+async def online_off_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    selected = context.user_data.get("selected")
+    if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
+    
+    client = clients[selected]
+    if hasattr(client, 'online_task') and client.online_task:
+        client.online_task.cancel()
+        client.online_task = None
+        try:
+            await client(functions.account.UpdateStatusRequest(offline=True))
+        except: pass
+        await update.message.reply_text(f"🔴 <b>{selected}</b> onlayn rejimidan chiqarildi.", parse_mode="HTML")
+    else:
+        await update.message.reply_text(f"⚠️ <b>{selected}</b> onlayn rejimi yoqilmagan edi.", parse_mode="HTML")
+
 async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
     selected = context.user_data.get("selected")
     if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
 
-    await clients[selected].disconnect()
+    client = clients[selected]
+    if hasattr(client, 'online_task') and client.online_task:
+        client.online_task.cancel()
+        
+    await client.disconnect()
     del clients[selected]
     (DIR / f"{selected}.session").unlink(missing_ok=True)
     
@@ -151,6 +229,7 @@ async def load_sessions(app: Application):
         try:
             await client.connect()
             if await client.is_user_authorized():
+                add_userbot_handlers(client)
                 asyncio.create_task(client.run_until_disconnected())
                 clients[name] = client
             else:
@@ -169,6 +248,8 @@ async def start():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("id", tg_id))
     app.add_handler(CommandHandler("info", info))
+    app.add_handler(CommandHandler("online_on", online_on_cmd))
+    app.add_handler(CommandHandler("online_off", online_off_cmd))
     app.add_handler(CommandHandler("logout", logout))
     app.add_handler(CommandHandler("ping", ping))
     
