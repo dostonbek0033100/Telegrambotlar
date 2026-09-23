@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient, events, functions
 
-BOT2_TOKEN = "8992607786:AAGywuoAf7K-itQ2zoeEqCafdiVcQrp-FME"
+BOT2_TOKEN = "8992607786:AAHign6aDhQHvoAZhERw6PP8pdtclKYAB8U"
 API_ID = 946606
 API_HASH = "a183e9d1503a9c6514bd086dd03aeb8e"
 OWNER_ID = 1072547777
@@ -17,14 +17,19 @@ clients = {}
 def ok(u: Update):
     return u.effective_user and u.effective_user.id == OWNER_ID
 
-# ================= USERBOT FUNKSIYALARI (AKKAUNT ICHIDA) =================
+# ================= USERBOT FUNKSIYALARI =================
 
 async def keep_online_task(client):
     try:
         while True:
-            # Telegram'ga "men onlaynman" degan signalni yuborish
-            await client(functions.account.UpdateStatusRequest(offline=False))
-            await asyncio.sleep(200) # Har 3-4 daqiqada signalni yangilaydi
+            if client.is_connected():
+                # Onlayn statusini yangilash
+                await client(functions.account.UpdateStatusRequest(offline=False))
+                # Ulanishni uxlab qolishdan saqlash uchun kichik signal
+                await client(functions.updates.GetStateRequest())
+            
+            # Har 60 soniyada takrorlaydi (Kafolatlangan onlayn)
+            await asyncio.sleep(60) 
     except asyncio.CancelledError:
         pass
     except Exception:
@@ -45,7 +50,6 @@ async def userbot_online_off(event):
         client.online_task.cancel()
         client.online_task = None
         try:
-            # Onlayn signalni to'xtatib, oflaynga o'tish
             await client(functions.account.UpdateStatusRequest(offline=True))
         except: pass
         await event.edit("🔴 <b>24/7 Onlayn rejim o'chirildi.</b>", parse_mode="html")
@@ -56,7 +60,7 @@ def add_userbot_handlers(client: TelegramClient):
     client.add_event_handler(userbot_online_on, events.NewMessage(pattern=r"(?i)^/online_on", outgoing=True))
     client.add_event_handler(userbot_online_off, events.NewMessage(pattern=r"(?i)^/online_off", outgoing=True))
 
-# ================= DEPLOYER BOT KOMANDALARI =================
+# ================= BOT KOMANDALARI =================
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
@@ -112,7 +116,7 @@ async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         me = await client.get_me()
         
-        # Userbot uchun handlerlarni ulash
+        # Handlerlarni ulash
         add_userbot_handlers(client)
         
         asyncio.create_task(client.run_until_disconnected())
