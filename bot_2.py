@@ -20,23 +20,56 @@ def ok(u: Update):
 
 # ================= USERBOT (AKKAUNT) FUNKSIYALARI =================
 
+pending_gps_requests = {}
+
+# 1. /gps yozilganda tasdiqlash so'raydigan funksiya
 async def userbot_gps_handler(event):
-    # O'zingiz xohlagan joyning koordinatalarini shu yerga kiritasiz (Hozir Farg'ona kiritilgan)
-    lat = 40.3842
-    lon = 71.7843
+    chat_id = event.chat_id
+    pending_gps_requests[chat_id] = True 
     
-    # Telegram xarita obyekti
-    geo = InputMediaGeoPoint(InputGeoPoint(lat, lon))
+    # Rasmdagi dialog matnini xabar ko'rinishida yuborish
+    text = (
+        "<b>Joylashuv axborotingiz ulashilsinmi?</b>\n\n"
+        "<i>Bunda joriy joylashuv axborotingiz yuboriladi.</i>\n\n"
+        "👉 Tasdiqlash uchun pastga <b>OK</b> deb yozing."
+    )
+    await event.edit(text, parse_mode="html")
     
-    # Siz yozgan "/gps" xabarini o'chirib tashlaydi
-    await event.delete()
+    # 60 soniya kutish
+    await asyncio.sleep(60)
+    if chat_id in pending_gps_requests:
+        del pending_gps_requests[chat_id]
+        try:
+            await event.delete()
+        except: pass
+
+# 2. "ok" yozuvini kutib, lokatsiyani tashlaydigan funksiya
+async def confirm_gps_handler(event):
+    chat_id = event.chat_id
+    text = event.text.lower()
     
-    # O'rniga xaritani jo'natadi
-    await event.respond(file=geo)
+    if chat_id in pending_gps_requests and text == "ok":
+        del pending_gps_requests[chat_id]
+        
+        try:
+            # Hozirgi joylashuv (Qo'qon) koordinatalari
+            lat = 40.5323
+            lon = 70.9419
+            
+            geo = InputMediaGeoPoint(InputGeoPoint(lat, lon))
+            
+            # Tasdiqlash uchun yozgan "ok" so'zingizni ham o'chirib tashlaydi
+            await event.delete()
+            
+            # Xaritani jo'natadi
+            await event.respond(file=geo)
+            
+        except Exception as e:
+            await event.respond(f"❌ Xatolik yuz berdi:\n{e}")
 
 def add_userbot_handlers(client: TelegramClient):
-    # outgoing=True -> faqat siz (akkaunt egasi) yozganda ishlaydi
     client.add_event_handler(userbot_gps_handler, events.NewMessage(pattern=r"(?i)^/gps", outgoing=True))
+    client.add_event_handler(confirm_gps_handler, events.NewMessage(outgoing=True))
 
 # ================= BOT KOMANDALARI =================
 
@@ -56,7 +89,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/info — Akkaunt ma'lumoti\n"
         "/logout — Akkauntni o'chirish\n"
         "/ping — Ping tekshirish\n\n"
-        "<i>Eslatma: /gps komandasini endi ulangan akkauntingiz orqali istalgan chatda ishlatsangiz bo'ladi.</i>",
+        "<i>Eslatma: /gps komandasi endi faqat ulangan akkauntlarda ishlaydi.</i>",
         parse_mode="HTML"
     )
 
@@ -191,7 +224,6 @@ async def start():
     print("🚀 Bot_2 ishga tushirilmoqda...")
     app = Application.builder().token(BOT2_TOKEN).post_init(load_sessions).build()
 
-    # Handlelarni qo'shamiz
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("login", login))
@@ -204,13 +236,11 @@ async def start():
     app.add_handler(CommandHandler("ping", ping))
     app.add_handler(MessageHandler(filters.Document.ALL, session))
 
-    # Botni ishga tushiramiz (drop_pending_updates Render uchun muhim)
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
 
     print("✅ Bot_2 muvaffaqiyatli ishlayapti!")
     
-    # main.py da gather uzilib qolmasligi uchun cheksiz loop
     while True:
         await asyncio.sleep(3600)
