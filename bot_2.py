@@ -1,12 +1,14 @@
 import asyncio
+from datetime import datetime, timedelta
 from pathlib import Path
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient, events, functions
+from telethon.tl.functions.account import UpdateProfileRequest
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # ================= SOZLAMALAR =================
-BOT2_TOKEN = "8992607786:AAHoL2E8joe9KrPJyhP5UQXziSuVSi16lrM" 
+BOT2_TOKEN = "YANGI_TOKENNI_SHU_YERGA_YOZING"
 API_ID = 946606
 API_HASH = "a183e9d1503a9c6514bd086dd03aeb8e"
 OWNER_ID = 1072547777
@@ -54,6 +56,8 @@ async def delete_reply(session_name, keyword):
     return False
 
 # ================= USERBOT FUNKSIYALARI =================
+
+# 1. Onlayn ushlab turish
 async def keep_online_task(client):
     try:
         while True:
@@ -80,6 +84,7 @@ async def userbot_online_off(event):
         except: pass
         await event.edit("🔴 <b>24/7 Onlayn rejim o'chirildi.</b>", parse_mode="html")
 
+# 2. Avto-javob
 async def userbot_auto_on(event):
     event.client.auto_reply = True
     await event.edit("🤖 <b>Avto-javob tizimi yoqildi!</b>", parse_mode="html")
@@ -110,11 +115,52 @@ async def auto_responder(event):
     if "*" in user_replies:
         await event.reply(user_replies["*"])
 
+# 3. Familyaga soat qo'yish
+async def keep_time_task(client):
+    try:
+        while True:
+            if client.is_connected():
+                # O'zbekiston vaqtini olish (UTC+5)
+                now = datetime.utcnow() + timedelta(hours=5)
+                current_time = now.strftime("%H:%M")
+                try:
+                    await client(UpdateProfileRequest(last_name=current_time))
+                except Exception:
+                    pass
+            
+            # Har daqiqaning boshida yangilanishi uchun soniyalarni hisoblab uxlash
+            now = datetime.utcnow() + timedelta(hours=5)
+            await asyncio.sleep(60 - now.second)
+    except asyncio.CancelledError: pass
+    except Exception: pass
+
+async def userbot_time_on(event):
+    client = event.client
+    if hasattr(client, 'time_task') and client.time_task:
+        return await event.edit("⏳ Soatli ism allaqachon yoqilgan.")
+    client.time_task = asyncio.create_task(keep_time_task(client))
+    await event.edit("⏳ <b>Soatli ism yoqildi!</b>\nFamilyangiz har minutda yangilanadi.", parse_mode="html")
+
+async def userbot_time_off(event):
+    client = event.client
+    if hasattr(client, 'time_task') and client.time_task:
+        client.time_task.cancel()
+        client.time_task = None
+        try: 
+            await client(UpdateProfileRequest(last_name="")) # O'chirilganda familyani bo'shatadi
+        except: pass
+        await event.edit("🛑 <b>Soatli ism o'chirildi.</b>", parse_mode="html")
+    else:
+        await event.edit("⚠️ Soatli ism yoqilmagan edi.")
+
+# --- Barcha userbot komandalarini ro'yxatdan o'tkazish ---
 def add_userbot_handlers(client: TelegramClient):
     client.add_event_handler(userbot_online_on, events.NewMessage(pattern=r"(?i)^/online_on", outgoing=True))
     client.add_event_handler(userbot_online_off, events.NewMessage(pattern=r"(?i)^/online_off", outgoing=True))
     client.add_event_handler(userbot_auto_on, events.NewMessage(pattern=r"(?i)^/auto_on", outgoing=True))
     client.add_event_handler(userbot_auto_off, events.NewMessage(pattern=r"(?i)^/auto_off", outgoing=True))
+    client.add_event_handler(userbot_time_on, events.NewMessage(pattern=r"(?i)^/s_on", outgoing=True))
+    client.add_event_handler(userbot_time_off, events.NewMessage(pattern=r"(?i)^/s_off", outgoing=True))
     client.add_event_handler(auto_responder, events.NewMessage(incoming=True))
 
 
@@ -173,13 +219,14 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🛠 <b>Boshqaruv:</b>\n"
         "/login — Yangi .session fayl ulash\n"
-        "/accounts, /use NOMI, /status, /id, /info, /logout\n"
-        "/online_on, /online_off\n"
-        "/auto_on, /auto_off\n\n"
-        "📝 <b>Avto-javobni (Baza orqali) sozlash:</b>\n"
+        "/accounts, /use NOMI, /status, /logout\n"
+        "🌐 /online_on, /online_off\n"
+        "🤖 /auto_on, /auto_off\n"
+        "⏳ /s_on, /s_off — Familyaga soat qo'yish\n\n"
+        "📝 <b>Avto-javobni sozlash:</b>\n"
         "➕ <code>/add_auto salom | Vaalaykum assalom</code>\n"
         "➖ <code>/del_auto salom</code>\n"
-        "📋 <code>/list_auto</code> — Barcha so'zlar\n",
+        "📋 <code>/list_auto</code> — Barcha so'zlar",
         parse_mode="HTML"
     )
 
@@ -206,6 +253,28 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not selected: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
     c = clients.get(selected)
     await update.message.reply_text(f"📡 <b>{selected}</b>\n{'🟢 Ulangan' if c and c.is_connected() else '🔴 Ulanmagan'}", parse_mode="HTML")
+
+# Botdan turib boshqariladigan komandalar
+async def s_on_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    selected = context.user_data.get("selected")
+    if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
+    client = clients[selected]
+    if hasattr(client, 'time_task') and client.time_task: return await update.message.reply_text("⚠️ Soatli ism allaqachon yoqilgan.")
+    client.time_task = asyncio.create_task(keep_time_task(client))
+    await update.message.reply_text(f"⏳ <b>{selected}</b> familyasiga soat qo'yildi!", parse_mode="HTML")
+
+async def s_off_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    selected = context.user_data.get("selected")
+    if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
+    client = clients[selected]
+    if hasattr(client, 'time_task') and client.time_task:
+        client.time_task.cancel()
+        client.time_task = None
+        try: await client(UpdateProfileRequest(last_name=""))
+        except: pass
+        await update.message.reply_text("🛑 Soatli ism o'chirildi.")
 
 async def online_on_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
@@ -298,6 +367,7 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
     client = clients[selected]
     if hasattr(client, 'online_task') and client.online_task: client.online_task.cancel()
+    if hasattr(client, 'time_task') and client.time_task: client.time_task.cancel()
     await client.disconnect()
     del clients[selected]
     (DIR / f"{selected}.session").unlink(missing_ok=True)
@@ -336,6 +406,9 @@ async def start():
     app.add_handler(CommandHandler("online_off", online_off_cmd))
     app.add_handler(CommandHandler("auto_on", auto_on_cmd))
     app.add_handler(CommandHandler("auto_off", auto_off_cmd))
+    
+    app.add_handler(CommandHandler("s_on", s_on_cmd))
+    app.add_handler(CommandHandler("s_off", s_off_cmd))
     
     app.add_handler(CommandHandler("add_auto", add_auto_cmd))
     app.add_handler(CommandHandler("del_auto", del_auto_cmd))
