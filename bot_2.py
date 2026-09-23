@@ -349,7 +349,7 @@ async def start():
     # Botni ishga tushiramiz
     await app.initialize()
     await app.start()
-    await app.updater.start_polling()
+    await app.updater.start_polling(drop_pending_updates=True)
 
     print("✅ Bot_2 muvaffaqiyatli ishlayapti!")
     
