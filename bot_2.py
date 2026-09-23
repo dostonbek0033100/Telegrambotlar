@@ -1,8 +1,10 @@
-Import asyncio
+import asyncio
+import aiohttp
 from pathlib import Path
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
+from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-from telethon import TelegramClient
+from telethon import TelegramClient, events
+from telethon.tl.types import InputGeoPoint, InputMediaGeoPoint
 
 BOT2_TOKEN = "8992607786:AAHign6aDhQHvoAZhERw6PP8pdtclKYAB8U"
 API_ID = 946606
@@ -17,7 +19,37 @@ clients = {}
 def ok(u: Update):
     return u.effective_user and u.effective_user.id == OWNER_ID
 
-# Komanda funksiyasi (start_cmd deb o'zgartirildi)
+# ================= USERBOT (AKKAUNT) UCHUN HANDLER =================
+
+async def userbot_gps_handler(event):
+    # /gps yozilganda zudlik bilan ishlaydi
+    msg = await event.reply("⏳ <i>Lokatsiya olinmoqda...</i>", parse_mode="html")
+    
+    try:
+        # IP orqali lokatsiyani aniqlash (yoki qotirilgan lokatsiyadan foydalaniladi)
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://ip-api.com/json/") as response:
+                data = await response.json()
+                # Agar IP ishlamay qolsa, avtomatik Qo'qon koordinatalari olinadi
+                lat = data.get("lat", 40.53) 
+                lon = data.get("lon", 70.93)
+        
+        # Telegram xarita obyekti
+        geo = InputMediaGeoPoint(InputGeoPoint(lat, lon))
+        
+        await msg.delete()
+        # Hech qanday tugmasiz to'g'ridan-to'g'ri xaritani yuborish
+        await event.respond(file=geo)
+        
+    except Exception as e:
+        await msg.edit(f"❌ Xatolik yuz berdi:\n{e}")
+
+def add_userbot_handlers(client: TelegramClient):
+    # Faqat o'zingiz (outgoing=True) yozgan /gps ni ushlaydi
+    client.add_event_handler(userbot_gps_handler, events.NewMessage(pattern=r"(?i)^/gps", outgoing=True))
+
+# ================= BOT KOMANDALARI =================
+
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
     await update.message.reply_text("✅ <b>Bot_2 ishlayapti!</b>\nBarcha buyruqlar: /help", parse_mode="HTML")
@@ -33,8 +65,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/id — Telegram ID\n"
         "/info — Akkaunt ma'lumoti\n"
         "/logout — Akkauntni o'chirish\n"
-        "/ping — Ping tekshirish\n"
-        "/gps — GPS manzil jo'natish",
+        "/ping — Ping tekshirish\n\n"
+        "<i>Eslatma: /gps komandasi endi faqat ulangan akkauntlarda ishlaydi.</i>",
         parse_mode="HTML"
     )
 
@@ -70,6 +102,11 @@ async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         me = await client.get_me()
+        
+        # Userbot handlerlarini ulash
+        add_userbot_handlers(client)
+        asyncio.create_task(client.run_until_disconnected())
+        
         clients[name] = client
         context.user_data["selected"] = name
 
@@ -144,17 +181,8 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if ok(update): await update.message.reply_text("🏓 Pong 🟢 Bot_2 faol!")
 
-async def gps(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not ok(update): return
-    kb = [[KeyboardButton("📍 Joylashuvni yuborish", request_location=True)]]
-    await update.message.reply_text("Tugmani bosing:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True, one_time_keyboard=True))
+# ================= SESSIYALARNI TIKLASH =================
 
-async def location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not ok(update): return
-    x = update.message.location
-    await update.message.reply_text(f"📍 {x.latitude}, {x.longitude}\n🗺 https://www.google.com/maps?q={x.latitude},{x.longitude}")
-
-# Sessiyalarni tiklash funksiyasi
 async def load_sessions(app: Application):
     for p in DIR.glob("*.session"):
         name = p.stem
@@ -162,19 +190,19 @@ async def load_sessions(app: Application):
         try:
             await client.connect()
             if await client.is_user_authorized():
+                add_userbot_handlers(client)
+                asyncio.create_task(client.run_until_disconnected())
                 clients[name] = client
             else:
                 await client.disconnect()
         except Exception: pass
 
-# ============================================================
-# MAIN.PY CHAQIRADIGAN FUNKSIYA
-# ============================================================
+# ================= MAIN.PY CHAQIRADIGAN FUNKSIYA =================
+
 async def start():
     print("🚀 Bot_2 ishga tushirilmoqda...")
     app = Application.builder().token(BOT2_TOKEN).post_init(load_sessions).build()
 
-    # Handlelarni qo'shamiz
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("login", login))
@@ -185,17 +213,13 @@ async def start():
     app.add_handler(CommandHandler("info", info))
     app.add_handler(CommandHandler("logout", logout))
     app.add_handler(CommandHandler("ping", ping))
-    app.add_handler(CommandHandler("gps", gps))
     app.add_handler(MessageHandler(filters.Document.ALL, session))
-    app.add_handler(MessageHandler(filters.LOCATION, location))
 
-    # Botni ishga tushiramiz
     await app.initialize()
     await app.start()
-    await app.updater.start_polling()
+    await app.updater.start_polling(drop_pending_updates=True)
 
     print("✅ Bot_2 muvaffaqiyatli ishlayapti!")
     
-    # main.py da gather uzilib qolmasligi uchun cheksiz loop
     while True:
         await asyncio.sleep(3600)
