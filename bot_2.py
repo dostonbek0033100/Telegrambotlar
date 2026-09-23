@@ -2,8 +2,7 @@ import asyncio
 from pathlib import Path
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-from telethon import TelegramClient, events
-from telethon.tl.types import InputGeoPoint, InputMediaGeoPoint
+from telethon import TelegramClient
 
 BOT2_TOKEN = "8992607786:AAHign6aDhQHvoAZhERw6PP8pdtclKYAB8U"
 API_ID = 946606
@@ -17,61 +16,6 @@ clients = {}
 
 def ok(u: Update):
     return u.effective_user and u.effective_user.id == OWNER_ID
-
-# ================= USERBOT (AKKAUNT) FUNKSIYALARI =================
-
-pending_gps_requests = {}
-
-# 1. /gps yozilganda tasdiqlash so'raydigan funksiya
-async def userbot_gps_handler(event):
-    chat_id = event.chat_id
-    pending_gps_requests[chat_id] = True 
-    
-    # Rasmdagi dialog matnini xabar ko'rinishida yuborish
-    text = (
-        "<b>Joylashuv axborotingiz ulashilsinmi?</b>\n\n"
-        "<i>Bunda joriy joylashuv axborotingiz yuboriladi.</i>\n\n"
-        "👉 Tasdiqlash uchun pastga <b>OK</b> deb yozing."
-    )
-    await event.edit(text, parse_mode="html")
-    
-    # 60 soniya kutish
-    await asyncio.sleep(60)
-    if chat_id in pending_gps_requests:
-        del pending_gps_requests[chat_id]
-        try:
-            await event.delete()
-        except: pass
-
-# 2. "ok" yozuvini kutib, lokatsiyani tashlaydigan funksiya
-async def confirm_gps_handler(event):
-    chat_id = event.chat_id
-    text = event.text.lower()
-    
-    if chat_id in pending_gps_requests and text == "ok":
-        del pending_gps_requests[chat_id]
-        
-        try:
-            # Hozirgi joylashuv (Qo'qon) koordinatalari
-            lat = 40.5323
-            lon = 70.9419
-            
-            geo = InputMediaGeoPoint(InputGeoPoint(lat, lon))
-            
-            # Tasdiqlash uchun yozgan "ok" so'zingizni ham o'chirib tashlaydi
-            await event.delete()
-            
-            # Xaritani jo'natadi
-            await event.respond(file=geo)
-            
-        except Exception as e:
-            await event.respond(f"❌ Xatolik yuz berdi:\n{e}")
-
-def add_userbot_handlers(client: TelegramClient):
-    client.add_event_handler(userbot_gps_handler, events.NewMessage(pattern=r"(?i)^/gps", outgoing=True))
-    client.add_event_handler(confirm_gps_handler, events.NewMessage(outgoing=True))
-
-# ================= BOT KOMANDALARI =================
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
@@ -88,8 +32,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/id — Telegram ID\n"
         "/info — Akkaunt ma'lumoti\n"
         "/logout — Akkauntni o'chirish\n"
-        "/ping — Ping tekshirish\n\n"
-        "<i>Eslatma: /gps komandasi endi faqat ulangan akkauntlarda ishlaydi.</i>",
+        "/ping — Ping tekshirish",
         parse_mode="HTML"
     )
 
@@ -126,10 +69,7 @@ async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         me = await client.get_me()
         
-        # Userbot handlerlarini ulash va fon rejimida eshitishni boshlash
-        add_userbot_handlers(client)
         asyncio.create_task(client.run_until_disconnected())
-        
         clients[name] = client
         context.user_data["selected"] = name
 
@@ -204,7 +144,6 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if ok(update): await update.message.reply_text("🏓 Pong 🟢 Bot_2 faol!")
 
-# ================= SESSIYALARNI TIKLASH =================
 async def load_sessions(app: Application):
     for p in DIR.glob("*.session"):
         name = p.stem
@@ -212,14 +151,12 @@ async def load_sessions(app: Application):
         try:
             await client.connect()
             if await client.is_user_authorized():
-                add_userbot_handlers(client)
                 asyncio.create_task(client.run_until_disconnected())
                 clients[name] = client
             else:
                 await client.disconnect()
         except Exception: pass
 
-# ================= MAIN.PY CHAQIRADIGAN FUNKSIYA =================
 async def start():
     print("🚀 Bot_2 ishga tushirilmoqda...")
     app = Application.builder().token(BOT2_TOKEN).post_init(load_sessions).build()
@@ -234,6 +171,7 @@ async def start():
     app.add_handler(CommandHandler("info", info))
     app.add_handler(CommandHandler("logout", logout))
     app.add_handler(CommandHandler("ping", ping))
+    
     app.add_handler(MessageHandler(filters.Document.ALL, session))
 
     await app.initialize()
