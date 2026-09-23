@@ -6,7 +6,7 @@ from telethon import TelegramClient, events, functions
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # ================= SOZLAMALAR =================
-BOT2_TOKEN = "YANGI_TOKENNI_SHU_YERGA_YOZING"
+BOT2_TOKEN = "8992607786:AAHoL2E8joe9KrPJyhP5UQXziSuVSi16lrM"
 API_ID = 946606
 API_HASH = "a183e9d1503a9c6514bd086dd03aeb8e"
 OWNER_ID = 1072547777
