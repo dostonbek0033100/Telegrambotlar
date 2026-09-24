@@ -5,16 +5,21 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient, events, functions
 from telethon.tl.functions.account import UpdateProfileRequest
+import google.generativeai as genai
 
 # ================= SOZLAMALAR =================
-BOT2_TOKEN = "8992607786:AAHoL2E8joe9KrPJyhP5UQXziSuVSi16lrM"
+BOT2_TOKEN = "YANGI_TOKENNI_SHU_YERGA_YOZING"
 API_ID = 946606
 API_HASH = "a183e9d1503a9c6514bd086dd03aeb8e"
 OWNER_ID = 1072547777
 
+# AI SOZLAMALARI
+GEMINI_API_KEY = "GEMINI_KALITNI_SHU_YERGA_YOZING"
+genai.configure(api_key=GEMINI_API_KEY)
+ai_model = genai.GenerativeModel('gemini-1.5-flash')
+
 DIR = Path("bot_2")
 DIR.mkdir(exist_ok=True)
-
 clients = {}
 
 def ok(u: Update):
@@ -22,7 +27,6 @@ def ok(u: Update):
 
 # ================= USERBOT FUNKSIYALARI =================
 
-# 1. Onlayn ushlab turish
 async def keep_online_task(client):
     try:
         while True:
@@ -49,17 +53,14 @@ async def userbot_online_off(event):
         except: pass
         await event.edit("🔴 **24/7 Onlayn rejim o'chirildi.**")
 
-# 2. Familyaga soat qo'yish
 async def keep_time_task(client):
     try:
         while True:
             if client.is_connected():
                 now = datetime.utcnow() + timedelta(hours=5)
                 current_time = now.strftime("%H:%M")
-                try:
-                    await client(UpdateProfileRequest(last_name=current_time))
-                except Exception:
-                    pass
+                try: await client(UpdateProfileRequest(last_name=current_time))
+                except Exception: pass
             now = datetime.utcnow() + timedelta(hours=5)
             await asyncio.sleep(60 - now.second)
     except asyncio.CancelledError: pass
@@ -77,19 +78,19 @@ async def userbot_time_off(event):
     if hasattr(client, 'time_task') and client.time_task:
         client.time_task.cancel()
         client.time_task = None
-        try: 
-            await client(UpdateProfileRequest(last_name=""))
+        try: await client(UpdateProfileRequest(last_name=""))
         except: pass
         await event.edit("🛑 **Soatli ism o'chirildi.**")
 
-# 3. Yagona Avto-javob
+
+# --- AQLLI AI AVTO-JAVOB ---
 async def userbot_auto_on(event):
     event.client.auto_reply = True
-    await event.edit("🤖 **Avto-javob tizimi yoqildi!**")
+    await event.edit("🤖 **Aqlli AI Avto-javob yoqildi!**\nEndi xabarlarga AI javob beradi.")
 
 async def userbot_auto_off(event):
     event.client.auto_reply = False
-    await event.edit("💤 **Avto-javob tizimi o'chirildi.**")
+    await event.edit("💤 **Aqlli AI Avto-javob o'chirildi.**")
 
 async def auto_responder(event):
     client = event.client
@@ -99,13 +100,32 @@ async def auto_responder(event):
     sender = await event.get_sender()
     if sender is None or sender.bot or sender.is_self: return
 
-    reply_text = "Xozir javob qaytaraman\n\n(avto javob qaytargich 🤖)"
-    await event.reply(reply_text)
+    text = event.raw_text
+    if not text: return
+
+    try:
+        # AI ga qanday javob berishini uqtiramiz (Prompt)
+        prompt = (
+            "Sen Dostonbekning shaxsiy Telegram yordamchisisan. "
+            f"Unga hozirgina quyidagi xabar keldi: '{text}'. "
+            "Ushbu xabarga o'zbek tilida, do'stona, qisqa va aniq javob yoz. "
+            "Dostonbek hozir bandligini yoki keyinroq batafsil javob berishini xushmuomalalik bilan bildir. "
+            "Javobingni boshqa izohlarsiz, to'g'ridan-to'g'ri yoz."
+        )
+        
+        # Generative AI'dan javob olish (Asinxron ishlashi uchun)
+        response = await ai_model.generate_content_async(prompt)
+        ai_reply = response.text.strip()
+        
+        await event.reply(f"{ai_reply}\n\n*(AI yordamchi 🤖)*")
+    except Exception as e:
+        # Xatolik bo'lsa (masalan API limit tugasa) standart javob qaytaradi
+        await event.reply("Xozir javob qaytaraman\n\n*(avto javob qaytargich 🤖)*")
 
 # 4. Anti-reklama (Botlarni guruhda o'chirish)
 async def userbot_antiad_on(event):
     event.client.anti_ad = True
-    await event.edit("🛡 **Botlarga qarshi Anti-reklama yoqildi!**\nEndi admin bo'lgan guruhlaringizda botlar xabari o'chiriladi.")
+    await event.edit("🛡 **Botlarga qarshi Anti-reklama yoqildi!**")
 
 async def userbot_antiad_off(event):
     event.client.anti_ad = False
@@ -117,23 +137,17 @@ async def anti_ad_handler(event):
     if not event.is_group: return
         
     sender = await event.get_sender()
-    # Agar xabar jo'natuvchi boshqa bot bo'lsa
     if sender and getattr(sender, 'bot', False) and not sender.is_self:
-        try:
-            await event.delete()
-        except Exception:
-            pass # Admin bo'lmasa xatolik bermay jim turadi
+        try: await event.delete()
+        except Exception: pass
 
 def add_userbot_handlers(client: TelegramClient):
     client.add_event_handler(userbot_online_on, events.NewMessage(pattern=r"(?i)^/online_on", outgoing=True))
     client.add_event_handler(userbot_online_off, events.NewMessage(pattern=r"(?i)^/online_off", outgoing=True))
-    
     client.add_event_handler(userbot_time_on, events.NewMessage(pattern=r"(?i)^/s_on", outgoing=True))
     client.add_event_handler(userbot_time_off, events.NewMessage(pattern=r"(?i)^/s_off", outgoing=True))
-    
     client.add_event_handler(userbot_auto_on, events.NewMessage(pattern=r"(?i)^/auto_on", outgoing=True))
     client.add_event_handler(userbot_auto_off, events.NewMessage(pattern=r"(?i)^/auto_off", outgoing=True))
-    
     client.add_event_handler(userbot_antiad_on, events.NewMessage(pattern=r"(?i)^/antiad_on", outgoing=True))
     client.add_event_handler(userbot_antiad_off, events.NewMessage(pattern=r"(?i)^/antiad_off", outgoing=True))
     
@@ -149,7 +163,6 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update) or not context.user_data.get("login"): return
-
     f = update.message.document
     if not f.file_name.endswith(".session"):
         return await update.message.reply_text("❌ Faqat <b>.session</b> fayl qabul qilinadi!", parse_mode="HTML")
@@ -157,7 +170,6 @@ async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["login"] = False
     name = Path(f.file_name).stem
     path = DIR / f"{name}.session"
-
     tgfile = await context.bot.get_file(f.file_id)
     await tgfile.download_to_drive(str(path))
 
@@ -175,17 +187,13 @@ async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
         client.auto_reply = False
         client.anti_ad = False
         client.session_name = name
-        
         add_userbot_handlers(client)
         asyncio.create_task(client.run_until_disconnected())
-
         clients[name] = client
         context.user_data["selected"] = name
-
         await msg.edit_text(f"✅ <b>Muvaffaqiyatli ulandi!</b>\n📁 Sessiya: <b>{name}</b>\n🆔 ID: <code>{me.id}</code>", parse_mode="HTML")
     except Exception as e:
         await msg.edit_text(f"❌ Xatolik: {e}")
-
 
 # ================= BOT KOMANDALARI =================
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -199,7 +207,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📁 /login — Yangi .session fayl ulash\n"
         "📊 /accounts, /use NOMI, /status, /logout\n\n"
         "🌐 /online_on, /online_off — 24/7 Onlayn\n"
-        "🤖 /auto_on, /auto_off — Avto-javob\n"
+        "🤖 /auto_on, /auto_off — Aqlli AI Avto-javob\n"
         "⏳ /s_on, /s_off — Familyaga soat\n"
         "🛡 /antiad_on, /antiad_off — Guruhda botlarni o'chirish\n",
         parse_mode="HTML"
@@ -276,28 +284,28 @@ async def auto_on_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected = context.user_data.get("selected")
     if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
     clients[selected].auto_reply = True
-    await update.message.reply_text(f"🤖 <b>{selected}</b> uchun avto-javob yoqildi!", parse_mode="HTML")
+    await update.message.reply_text(f"🤖 <b>{selected}</b> uchun Aqlli AI Avto-javob yoqildi!", parse_mode="HTML")
 
 async def auto_off_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
     selected = context.user_data.get("selected")
     if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
     clients[selected].auto_reply = False
-    await update.message.reply_text(f"💤 <b>{selected}</b> uchun avto-javob o'chirildi.", parse_mode="HTML")
+    await update.message.reply_text(f"💤 <b>{selected}</b> uchun AI Avto-javob o'chirildi.", parse_mode="HTML")
 
 async def antiad_on_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
     selected = context.user_data.get("selected")
     if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
     clients[selected].anti_ad = True
-    await update.message.reply_text(f"🛡 <b>{selected}</b> uchun Bot-reklamalarni o'chirish yoqildi!", parse_mode="HTML")
+    await update.message.reply_text(f"🛡 <b>{selected}</b> uchun Anti-reklama yoqildi!", parse_mode="HTML")
 
 async def antiad_off_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
     selected = context.user_data.get("selected")
     if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
     clients[selected].anti_ad = False
-    await update.message.reply_text(f"🛑 <b>{selected}</b> uchun Bot-reklamalarni o'chirish to'xtatildi.", parse_mode="HTML")
+    await update.message.reply_text(f"🛑 <b>{selected}</b> uchun Anti-reklama to'xtatildi.", parse_mode="HTML")
 
 async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
