@@ -97,12 +97,32 @@ async def auto_responder(event):
     if not event.is_private: return
         
     sender = await event.get_sender()
-    # O'zimizga yoki botlarga javob bermaydi
     if sender is None or sender.bot or sender.is_self: return
 
-    # Bir xil yagona javob matni
     reply_text = "Xozir javob qaytaraman\n\n(avto javob qaytargich 🤖)"
     await event.reply(reply_text)
+
+# 4. Anti-reklama (Botlarni guruhda o'chirish)
+async def userbot_antiad_on(event):
+    event.client.anti_ad = True
+    await event.edit("🛡 **Botlarga qarshi Anti-reklama yoqildi!**\nEndi admin bo'lgan guruhlaringizda botlar xabari o'chiriladi.")
+
+async def userbot_antiad_off(event):
+    event.client.anti_ad = False
+    await event.edit("🛑 **Anti-reklama o'chirildi.**")
+
+async def anti_ad_handler(event):
+    client = event.client
+    if not getattr(client, 'anti_ad', False): return
+    if not event.is_group: return
+        
+    sender = await event.get_sender()
+    # Agar xabar jo'natuvchi boshqa bot bo'lsa
+    if sender and getattr(sender, 'bot', False) and not sender.is_self:
+        try:
+            await event.delete()
+        except Exception:
+            pass # Admin bo'lmasa xatolik bermay jim turadi
 
 def add_userbot_handlers(client: TelegramClient):
     client.add_event_handler(userbot_online_on, events.NewMessage(pattern=r"(?i)^/online_on", outgoing=True))
@@ -114,7 +134,11 @@ def add_userbot_handlers(client: TelegramClient):
     client.add_event_handler(userbot_auto_on, events.NewMessage(pattern=r"(?i)^/auto_on", outgoing=True))
     client.add_event_handler(userbot_auto_off, events.NewMessage(pattern=r"(?i)^/auto_off", outgoing=True))
     
+    client.add_event_handler(userbot_antiad_on, events.NewMessage(pattern=r"(?i)^/antiad_on", outgoing=True))
+    client.add_event_handler(userbot_antiad_off, events.NewMessage(pattern=r"(?i)^/antiad_off", outgoing=True))
+    
     client.add_event_handler(auto_responder, events.NewMessage(incoming=True))
+    client.add_event_handler(anti_ad_handler, events.NewMessage(incoming=True))
 
 
 # ================= SESSIYA ORQALI LOGIN TIZIMI =================
@@ -149,6 +173,7 @@ async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         me = await client.get_me()
         client.auto_reply = False
+        client.anti_ad = False
         client.session_name = name
         
         add_userbot_handlers(client)
@@ -170,13 +195,13 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
     await update.message.reply_text(
-        "🛠 <b>Boshqaruv:</b>\n"
-        "/login — Yangi .session fayl ulash\n"
-        "/accounts, /use NOMI, /status, /logout\n"
-        "🌐 /online_on, /online_off\n"
-        "🤖 /auto_on, /auto_off\n"
-        "⏳ /s_on, /s_off — Familyaga soat qo'yish\n\n"
-        "📝 <b>Bu komandalarni profilingiz orqali ixtiyoriy chatga (masalan, saqlangan xabarlarga) yozib ham ishlatsangiz bo'ladi!</b>",
+        "🛠 <b>Boshqaruv (Bot yoki profilingizdan):</b>\n"
+        "📁 /login — Yangi .session fayl ulash\n"
+        "📊 /accounts, /use NOMI, /status, /logout\n\n"
+        "🌐 /online_on, /online_off — 24/7 Onlayn\n"
+        "🤖 /auto_on, /auto_off — Avto-javob\n"
+        "⏳ /s_on, /s_off — Familyaga soat\n"
+        "🛡 /antiad_on, /antiad_off — Guruhda botlarni o'chirish\n",
         parse_mode="HTML"
     )
 
@@ -260,6 +285,20 @@ async def auto_off_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clients[selected].auto_reply = False
     await update.message.reply_text(f"💤 <b>{selected}</b> uchun avto-javob o'chirildi.", parse_mode="HTML")
 
+async def antiad_on_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    selected = context.user_data.get("selected")
+    if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
+    clients[selected].anti_ad = True
+    await update.message.reply_text(f"🛡 <b>{selected}</b> uchun Bot-reklamalarni o'chirish yoqildi!", parse_mode="HTML")
+
+async def antiad_off_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    selected = context.user_data.get("selected")
+    if not selected or selected not in clients: return await update.message.reply_text("❌ Akkaunt tanlanmagan.")
+    clients[selected].anti_ad = False
+    await update.message.reply_text(f"🛑 <b>{selected}</b> uchun Bot-reklamalarni o'chirish to'xtatildi.", parse_mode="HTML")
+
 async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
     selected = context.user_data.get("selected")
@@ -284,6 +323,7 @@ async def load_sessions(app: Application):
             await client.connect()
             if await client.is_user_authorized():
                 client.auto_reply = False
+                client.anti_ad = False
                 client.session_name = name
                 add_userbot_handlers(client)
                 asyncio.create_task(client.run_until_disconnected())
@@ -305,10 +345,10 @@ async def start():
     app.add_handler(CommandHandler("online_off", online_off_cmd))
     app.add_handler(CommandHandler("auto_on", auto_on_cmd))
     app.add_handler(CommandHandler("auto_off", auto_off_cmd))
-    
     app.add_handler(CommandHandler("s_on", s_on_cmd))
     app.add_handler(CommandHandler("s_off", s_off_cmd))
-    
+    app.add_handler(CommandHandler("antiad_on", antiad_on_cmd))
+    app.add_handler(CommandHandler("antiad_off", antiad_off_cmd))
     app.add_handler(CommandHandler("logout", logout))
     app.add_handler(CommandHandler("ping", ping))
     
