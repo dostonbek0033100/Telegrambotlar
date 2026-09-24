@@ -8,7 +8,7 @@ from telethon.tl.functions.account import UpdateProfileRequest
 import google.generativeai as genai
 
 # ================= SOZLAMALAR =================
-BOT2_TOKEN = "8992607786:AAHoL2E8joe9KrPJyhP5UQXziSuVSi16lrM"
+BOT2_TOKEN = "8992607786:AAGxpptqFoAt-1Uy40Sp7oX8JpwUAg9TYG0"
 API_ID = 946606
 API_HASH = "a183e9d1503a9c6514bd086dd03aeb8e"
 OWNER_ID = 1072547777
