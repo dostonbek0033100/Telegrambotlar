@@ -2,3 +2,4 @@ python-telegram-bot
 telethon
 aiohttp
 motor
+google-generativeai
