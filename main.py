@@ -4,22 +4,13 @@ from aiohttp import web
 
 import bot_1
 import bot_2
-# import bot_3
+import bot_3
 
-
-# ============================================================
-# HEALTH CHECK
-# ============================================================
 
 async def health_check(request):
     return web.Response(
         text="Telegram botlar ishlayapti!"
     )
-
-
-# ============================================================
-# WEB SERVER
-# ============================================================
 
 async def start_web_server():
 
@@ -54,10 +45,6 @@ async def start_web_server():
     )
 
 
-# ============================================================
-# MAIN
-# ============================================================
-
 async def main():
 
     await asyncio.gather(
@@ -72,7 +59,7 @@ async def main():
         bot_2.start(),
 
         # Keyinchalik qo‘shamiz
-        # bot_3.start()
+        bot_3.start()
     )
 if __name__ == "__main__":
 
