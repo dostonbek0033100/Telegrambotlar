@@ -1,10 +1,14 @@
 import asyncio
+import os
+import time
+import urllib.parse
 from datetime import datetime, timedelta
 from pathlib import Path
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient, events, functions
 from telethon.tl.functions.account import UpdateProfileRequest
+from telethon.errors import SessionPasswordNeededError
 import google.generativeai as genai
 
 # ================= SOZLAMALAR =================
@@ -13,14 +17,15 @@ API_ID = 946606
 API_HASH = "a183e9d1503a9c6514bd086dd03aeb8e"
 OWNER_ID = 1072547777
 
-# AI SOZLAMALARI
-GEMINI_API_KEY = "AQ.Ab8RN6Jacg2QdiLuh78_vsrNRuY00lgxj6H_iiFgH99jfL5Ziw"
+# AI SOZLAMALARI (Render.com da Environment Variables orqali bersangiz ham bo'ladi)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "GEMINI_KALITNI_SHU_YERGA_YOZING")
 genai.configure(api_key=GEMINI_API_KEY)
 ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
 DIR = Path("bot_2")
 DIR.mkdir(exist_ok=True)
 clients = {}
+temp_clients = {}
 
 def ok(u: Update):
     return u.effective_user and u.effective_user.id == OWNER_ID
@@ -82,7 +87,6 @@ async def userbot_time_off(event):
         except: pass
         await event.edit("🛑 **Soatli ism o'chirildi.**")
 
-
 # --- AQLLI AI AVTO-JAVOB ---
 async def userbot_auto_on(event):
     event.client.auto_reply = True
@@ -104,7 +108,6 @@ async def auto_responder(event):
     if not text: return
 
     try:
-        # AI ga qanday javob berishini uqtiramiz (Prompt)
         prompt = (
             "Sen Dostonbekning shaxsiy Telegram yordamchisisan. "
             f"Unga hozirgina quyidagi xabar keldi: '{text}'. "
@@ -112,14 +115,10 @@ async def auto_responder(event):
             "Dostonbek hozir bandligini yoki keyinroq batafsil javob berishini xushmuomalalik bilan bildir. "
             "Javobingni boshqa izohlarsiz, to'g'ridan-to'g'ri yoz."
         )
-        
-        # Generative AI'dan javob olish (Asinxron ishlashi uchun)
         response = await ai_model.generate_content_async(prompt)
         ai_reply = response.text.strip()
-        
         await event.reply(f"{ai_reply}\n\n*(AI yordamchi 🤖)*")
     except Exception as e:
-        # Xatolik bo'lsa (masalan API limit tugasa) standart javob qaytaradi
         await event.reply("Xozir javob qaytaraman\n\n*(avto javob qaytargich 🤖)*")
 
 # 4. Anti-reklama (Botlarni guruhda o'chirish)
@@ -155,7 +154,9 @@ def add_userbot_handlers(client: TelegramClient):
     client.add_event_handler(anti_ad_handler, events.NewMessage(incoming=True))
 
 
-# ================= SESSIYA ORQALI LOGIN TIZIMI =================
+# ================= LOGIN TIZIMLARI =================
+
+# 1. Eski .session fayl orqali kirish
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
     context.user_data["login"] = True
@@ -195,6 +196,100 @@ async def session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await msg.edit_text(f"❌ Xatolik: {e}")
 
+# 2. Yangi QR Kod orqali kirish
+async def qr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    
+    name = f"qr_session_{int(time.time())}"
+    path = DIR / f"{name}.session"
+    client = TelegramClient(str(path.with_suffix("")), API_ID, API_HASH)
+    await client.connect()
+    
+    try:
+        qr_login = await client.qr_login()
+        url = qr_login.url
+        qr_img_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(url)}"
+        
+        msg = await update.message.reply_photo(
+            photo=qr_img_url,
+            caption="📷 <b>Ushbu QR kodni skanerlang!</b>\n\n"
+                    "<i>(Telegram Sozlamalar -> Qurilmalar -> Qurilmani ulash)</i>\n\n"
+                    "👇 Yoki bitta bosish orqali ulanish uchun pastdagi tugmani bosing:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔗 Avtomatik ulanish", url=url)]
+            ]),
+            parse_mode="HTML"
+        )
+        
+        # Foydalanuvchi QR kodni skanerlashini yoki tugmani bosishini kutamiz (2 daqiqa)
+        await asyncio.wait_for(qr_login.wait(), timeout=120)
+        
+        me = await client.get_me()
+        client.auto_reply = False
+        client.anti_ad = False
+        client.session_name = name
+        
+        add_userbot_handlers(client)
+        asyncio.create_task(client.run_until_disconnected())
+        clients[name] = client
+        context.user_data["selected"] = name
+        
+        await msg.edit_caption(f"✅ <b>Akkaunt muvaffaqiyatli ulandi!</b>\n👤 Ism: {me.first_name}\n🆔 ID: <code>{me.id}</code>", parse_mode="HTML")
+        
+    except SessionPasswordNeededError:
+        temp_clients[update.effective_user.id] = {"client": client, "name": name, "msg": msg}
+        context.user_data["login_step"] = "qr_password"
+        await msg.edit_caption("🔐 <b>Akkauntda 2 bosqichli parol (2FA) bor ekan!</b>\nIltimos, parolingizni xabar qilib yozib yuboring:", parse_mode="HTML")
+    except asyncio.TimeoutError:
+        await msg.edit_caption("⏳ <b>Vaqt tugadi.</b> QR kod yaroqsiz bo'ldi. Qaytadan /qr komandasini bering.", parse_mode="HTML")
+        await client.disconnect()
+        path.unlink(missing_ok=True)
+    except Exception as e:
+        await msg.edit_caption(f"❌ Xatolik yuz berdi: {e}", parse_mode="HTML")
+        await client.disconnect()
+        path.unlink(missing_ok=True)
+
+async def process_login_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update): return
+    step = context.user_data.get("login_step")
+    if not step: return
+
+    text = update.message.text.strip()
+    uid = update.effective_user.id
+
+    # QR kod parolini qabul qilish qismi
+    if step == "qr_password":
+        data = temp_clients.get(uid)
+        if not data: return
+        
+        client = data["client"]
+        name = data["name"]
+        status_msg = await update.message.reply_text("⏳ Parol tekshirilmoqda...")
+
+        try:
+            await client.sign_in(password=text)
+            me = await client.get_me()
+            
+            client.auto_reply = False
+            client.anti_ad = False
+            client.session_name = name
+            
+            add_userbot_handlers(client)
+            asyncio.create_task(client.run_until_disconnected())
+            clients[name] = client
+            context.user_data["selected"] = name
+            context.user_data["login_step"] = None
+            
+            if uid in temp_clients: del temp_clients[uid]
+            
+            await status_msg.edit_text(f"✅ <b>Akkaunt muvaffaqiyatli ulandi!</b>\n👤 Ism: {me.first_name}\n🆔 ID: <code>{me.id}</code>", parse_mode="HTML")
+        except Exception as e:
+            await status_msg.edit_text(f"❌ Parol xato yoki xatolik yuz berdi: {e}")
+            context.user_data["login_step"] = None
+            await client.disconnect()
+            (DIR / f"{name}.session").unlink(missing_ok=True)
+
+
 # ================= BOT KOMANDALARI =================
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
@@ -204,7 +299,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ok(update): return
     await update.message.reply_text(
         "🛠 <b>Boshqaruv (Bot yoki profilingizdan):</b>\n"
-        "📁 /login — Yangi .session fayl ulash\n"
+        "📱 /qr — QR Kod bilan oson ulanish\n"
+        "📁 /login — Eski usulda (.session) ulash\n"
         "📊 /accounts, /use NOMI, /status, /logout\n\n"
         "🌐 /online_on, /online_off — 24/7 Onlayn\n"
         "🤖 /auto_on, /auto_off — Aqlli AI Avto-javob\n"
@@ -346,6 +442,7 @@ async def start():
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("login", login))
+    app.add_handler(CommandHandler("qr", qr_cmd))
     app.add_handler(CommandHandler("accounts", accounts))
     app.add_handler(CommandHandler("use", use))
     app.add_handler(CommandHandler("status", status))
@@ -361,6 +458,7 @@ async def start():
     app.add_handler(CommandHandler("ping", ping))
     
     app.add_handler(MessageHandler(filters.Document.ALL, session))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_login_text))
 
     await app.initialize()
     await app.start()
