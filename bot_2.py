@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from telethon import TelegramClient, events, functions
 from telethon.tl.functions.account import UpdateProfileRequest
-from telethon.errors import SessionPasswordNeededError
+from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError, FloodWaitError
 import google.generativeai as genai
 
 # ================= SOZLAMALAR =================
@@ -253,6 +253,8 @@ async def process_login_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not ok(update): return
     step = context.user_data.get("login_step")
     if not step: return
+    if step.startswith("phone_"):
+        return await process_phone_text(update, context)
 
     text = update.message.text.strip()
     uid = update.effective_user.id
@@ -300,6 +302,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🛠 <b>Boshqaruv (Bot yoki profilingizdan):</b>\n"
         "📱 /qr — QR Kod bilan oson ulanish\n"
+        "📞 /phone — Telefon raqam orqali ulanish\n"
+        "❌ /cancel — Kirishni bekor qilish\n"
         "📁 /login — Eski usulda (.session) ulash\n"
         "📊 /accounts, /use NOMI, /status, /logout\n\n"
         "🌐 /online_on, /online_off — 24/7 Onlayn\n"
@@ -436,6 +440,127 @@ async def load_sessions(app: Application):
                 await client.disconnect()
         except Exception: pass
 
+
+
+# ================= TELEFON RAQAM ORQALI KIRISH =================
+# Faqat OWNER_ID bilan shaxsiy chatda ishlaydi.
+import re
+
+async def _phone_cleanup(uid, context, delete_file=True):
+    data = temp_clients.pop(uid, None)
+    context.user_data.pop("login_step", None)
+    if data:
+        client = data["client"]
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+        if delete_file:
+            (DIR / (data["name"] + ".session")).unlink(missing_ok=True)
+
+async def phone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update) or update.effective_chat.type != "private":
+        return
+    await _phone_cleanup(update.effective_user.id, context)
+    context.user_data["login_step"] = "phone_number"
+    await update.message.reply_text(
+        "📞 Telefon raqamingizni xalqaro formatda yuboring.\n"
+        "Masalan: +998901234567\n\nBekor qilish: /cancel"
+    )
+
+async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update) or update.effective_chat.type != "private":
+        return
+    await _phone_cleanup(update.effective_user.id, context)
+    await update.message.reply_text("❌ Kirish jarayoni bekor qilindi.")
+
+async def _phone_success(update, context, data):
+    client = data["client"]
+    me = await client.get_me()
+    name = data["name"]
+    client.auto_reply = False
+    client.anti_ad = False
+    client.session_name = name
+    add_userbot_handlers(client)
+    asyncio.create_task(client.run_until_disconnected())
+    clients[name] = client
+    context.user_data["selected"] = name
+    temp_clients.pop(update.effective_user.id, None)
+    context.user_data.pop("login_step", None)
+    await update.message.reply_text(
+        f"✅ Akkaunt ulandi!\n👤 {me.first_name}\n🆔 {me.id}\n📁 {name}"
+    )
+
+async def process_phone_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update) or update.effective_chat.type != "private":
+        return
+    uid = update.effective_user.id
+    step = context.user_data.get("login_step")
+    value = update.message.text.strip()
+    if step == "phone_number":
+        number = re.sub(r"[\s()-]", "", value)
+        if not re.fullmatch(r"\+[1-9]\d{7,14}", number):
+            return await update.message.reply_text("❌ Raqam formati noto‘g‘ri. Masalan: +998901234567")
+        name = f"phone_{int(time.time())}_{uid}"
+        client = TelegramClient(str(DIR / name), API_ID, API_HASH)
+        try:
+            await client.connect()
+            sent = await client.send_code_request(number)
+            temp_clients[uid] = {
+                "client": client, "name": name, "phone": number,
+                "phone_code_hash": sent.phone_code_hash,
+            }
+            context.user_data["login_step"] = "phone_code"
+            await update.message.reply_text(
+                "📩 Telegram yuborgan tasdiqlash kodini kiriting.\n"
+                "Kod SMS yoki Telegram ilovasiga kelishi mumkin.\n"
+                "Bekor qilish: /cancel"
+            )
+        except FloodWaitError as e:
+            await client.disconnect()
+            (DIR / (name + ".session")).unlink(missing_ok=True)
+            context.user_data.pop("login_step", None)
+            await update.message.reply_text(f"⏳ Telegram cheklovi: {e.seconds} soniya kuting.")
+        except Exception as e:
+            await client.disconnect()
+            (DIR / (name + ".session")).unlink(missing_ok=True)
+            context.user_data.pop("login_step", None)
+            await update.message.reply_text(f"❌ Kod so‘rashda xatolik: {type(e).__name__}: {e}")
+        return
+    data = temp_clients.get(uid)
+    if not data:
+        context.user_data.pop("login_step", None)
+        return await update.message.reply_text("❌ Jarayon topilmadi. /phone orqali qayta boshlang.")
+    client = data["client"]
+    if step == "phone_code":
+        code = re.sub(r"\s+", "", value)
+        if not re.fullmatch(r"\d{4,8}", code):
+            return await update.message.reply_text("❌ Tasdiqlash kodini faqat raqamlar bilan kiriting.")
+        try:
+            await client.sign_in(
+                phone=data["phone"], code=code,
+                phone_code_hash=data["phone_code_hash"]
+            )
+            return await _phone_success(update, context, data)
+        except SessionPasswordNeededError:
+            context.user_data["login_step"] = "phone_password"
+            return await update.message.reply_text("🔐 Ikki bosqichli himoya parolini kiriting. Bekor qilish: /cancel")
+        except PhoneCodeInvalidError:
+            return await update.message.reply_text("❌ Kod noto‘g‘ri. Qayta kiriting.")
+        except PhoneCodeExpiredError:
+            await _phone_cleanup(uid, context)
+            return await update.message.reply_text("⌛ Kod muddati tugagan. /phone orqali qayta boshlang.")
+        except Exception as e:
+            await _phone_cleanup(uid, context)
+            return await update.message.reply_text(f"❌ Kirishda xatolik: {type(e).__name__}: {e}")
+    if step == "phone_password":
+        try:
+            await client.sign_in(password=value)
+            return await _phone_success(update, context, data)
+        except Exception as e:
+            await update.message.reply_text(f"❌ Parol yoki kirishda xatolik: {type(e).__name__}. /cancel bilan bekor qilishingiz mumkin.")
+
+
 async def start():
     app = Application.builder().token(BOT2_TOKEN).post_init(load_sessions).build()
     
@@ -443,6 +568,8 @@ async def start():
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("qr", qr_cmd))
+    app.add_handler(CommandHandler("phone", phone_cmd))
+    app.add_handler(CommandHandler("cancel", cancel_cmd))
     app.add_handler(CommandHandler("accounts", accounts))
     app.add_handler(CommandHandler("use", use))
     app.add_handler(CommandHandler("status", status))
@@ -464,3 +591,6 @@ async def start():
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
     while True: await asyncio.sleep(3600)
+
+if __name__ == "__main__":
+    asyncio.run(start())
