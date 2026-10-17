@@ -4,8 +4,8 @@ from aiohttp import web
 
 import bot_1
 import bot_2
-import bot_3
-import bot_4
+#import bot_3
+#import bot_4
 
 
 async def health_check(request):
@@ -60,8 +60,8 @@ async def main():
         bot_2.start(),
 
         # Keyinchalik qo‘shamiz
-        bot_3.start()
-        bot_4.start()
+        #bot_3.start()
+        #bot_4.start()
     )
 if __name__ == "__main__":
 
