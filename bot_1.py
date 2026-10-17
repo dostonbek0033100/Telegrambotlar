@@ -13,11 +13,6 @@ from telegram.ext import (
 )
 from telegram.helpers import escape_markdown
 
-
-# ==============================
-# BOT TOKEN
-# ==============================
-
 BOT_TOKEN = os.getenv("BOT1_TOKEN")
 
 if not BOT_TOKEN:
@@ -25,17 +20,7 @@ if not BOT_TOKEN:
         "BOT1_TOKEN environment variable topilmadi!"
     )
 
-
-# ==============================
-# ADMINLAR
-# ==============================
-
 ADMIN_IDS = {1072547777}
-
-
-# ==============================
-# SPAM SO'ZLAR
-# ==============================
 
 SPAM_WORDS = [
     "xxx",
@@ -43,11 +28,6 @@ SPAM_WORDS = [
     "18+",
     "profilimda video bor",
 ]
-
-
-# ==============================
-# SPAM TEKSHIRISH
-# ==============================
 
 def contains_spam(text):
     text_lower = text.lower()
@@ -71,11 +51,6 @@ def contains_spam(text):
                 found.append(word)
 
     return found
-
-
-# ==============================
-# YANGI A'ZONI TEKSHIRISH
-# ==============================
 
 def should_ban(user):
     username = (
@@ -108,11 +83,6 @@ def should_ban(user):
         )
 
     return False, ""
-
-
-# ==============================
-# ADMINLARGA XABAR
-# ==============================
 
 async def notify_admins(
     context,
@@ -163,11 +133,6 @@ async def notify_admins(
                 f"❌ Admin {admin_id} ga xabar yuborilmadi: {e}"
             )
 
-
-# ==============================
-# /START
-# ==============================
-
 async def start_command(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
@@ -183,11 +148,6 @@ async def start_command(
         "🛡 Spam so'zlar yozgan "
         "foydalanuvchilar bloklanadi."
     )
-
-
-# ==============================
-# SPAM XABARLARNI TEKSHIRISH
-# ==============================
 
 async def check_spam_message(
     update: Update,
@@ -237,11 +197,6 @@ async def check_spam_message(
             reason
         )
 
-
-# ==============================
-# QOIDA BUZILGANDA
-# ==============================
-
 async def handle_violation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -270,10 +225,6 @@ async def handle_violation(
         )
         return
 
-    # ==========================
-    # 1. XABARNI O'CHIRISH
-    # ==========================
-
     try:
         await context.bot.delete_message(
             chat_id=chat.id,
@@ -289,16 +240,11 @@ async def handle_violation(
             f"❌ Xabarni o'chirishda xatolik: {e}"
         )
 
-    # ==========================
-    # 2. BAN
-    # ==========================
-
     try:
         await context.bot.ban_chat_member(
             chat_id=chat.id,
             user_id=user.id
         )
-
         print("====================================")
         print("🚫 BAN QILINDI")
         print(f"👤 Ism: {user.first_name}")
@@ -319,20 +265,12 @@ async def handle_violation(
 
         return
 
-    # ==========================
-    # 3. ADMINGA XABAR
-    # ==========================
-
     await notify_admins(
         context,
         chat.title,
         user,
         reason
     )
-
-    # ==========================
-    # 4. USERGA SHAXSIY XABAR
-    # ==========================
 
     try:
         await context.bot.send_message(
@@ -349,11 +287,6 @@ async def handle_violation(
 
     except Exception:
         pass
-
-
-# ==============================
-# YANGI A'ZONI TEKSHIRISH
-# ==============================
 
 async def check_new_member(
     update: Update,
@@ -400,10 +333,6 @@ async def check_new_member(
         else "username yo'q"
     )
 
-    # ==========================
-    # BAN
-    # ==========================
-
     try:
         await context.bot.ban_chat_member(
             chat_id=chat_member.chat.id,
@@ -430,20 +359,12 @@ async def check_new_member(
 
         return
 
-    # ==========================
-    # ADMINGA XABAR
-    # ==========================
-
     await notify_admins(
         context,
         chat_member.chat.title,
         user,
         reason
     )
-
-    # ==========================
-    # USERGA XABAR
-    # ==========================
 
     try:
         await context.bot.send_message(
@@ -460,11 +381,6 @@ async def check_new_member(
 
     except Exception:
         pass
-
-
-# ==============================
-# BOTNI ISHGA TUSHIRISH
-# ==============================
 
 async def start():
     print("====================================")
