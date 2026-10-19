@@ -141,6 +141,8 @@ async def anti_ad_handler(event):
         except Exception: pass
 
 def add_userbot_handlers(client: TelegramClient):
+    bio_setup(client)
+    client.add_event_handler(userbot_bio, events.NewMessage(pattern=r"(?i)^/bio(?:_on|_off|_list|_add|_del|_edit)?(?:\s|$)", outgoing=True))
     client.add_event_handler(userbot_online_on, events.NewMessage(pattern=r"(?i)^/online_on", outgoing=True))
     client.add_event_handler(userbot_online_off, events.NewMessage(pattern=r"(?i)^/online_off", outgoing=True))
     client.add_event_handler(userbot_time_on, events.NewMessage(pattern=r"(?i)^/s_on", outgoing=True))
@@ -152,6 +154,197 @@ def add_userbot_handlers(client: TelegramClient):
     
     client.add_event_handler(auto_responder, events.NewMessage(incoming=True))
     client.add_event_handler(anti_ad_handler, events.NewMessage(incoming=True))
+
+
+# ================= BIO RO‘YXATI =================
+import json
+import logging
+
+BIO_INTERVAL = 300
+BIO_DEFAULTS = [
+    "Qalbimning sen bor joyi og‘ridi..",
+    "Dunyo bir kapalak umri safardir. Na hafa bo‘lishga, na hafa qilishga arziydi.!",
+    "Oddiylikda bo‘lur,\nEng buyuk muhabbat..",
+    "Istak bo‘lsa imkoniyatlar bo‘ladi. Harakatlar bo‘lsa natijalar paydo bo‘ladi..",
+    "O‘zgarish fasllarga mos,\nInsonlarga emas..",
+    "Kun kelib biz bilan o‘tgan kunlaringiz, faqat baxtni eslatadi..)",
+    "Atrofingiz o‘rmon bo‘lsa, siz hayvon bo‘lishingiz shart emas.",
+    '"Inna lillahi va inna ilayhi rojiun" :\nSevganingdan kelib – sevganinga Qaytasan..',
+    "Odamlar uchun sizdan yaxshisi kelguncha yaxshisiz.",
+    "Baxt oddiylikda emas, balki bor narsangiz uchun shukur qilishda!",
+]
+BIO_COMMANDS = ['bio', 'bio_on', 'bio_off', 'bio_list', 'bio_add', 'bio_del', 'bio_edit']
+
+def bio_save(client):
+    path = client.bio_path
+    temporary = path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(client.bio_state, ensure_ascii=False, indent=2), encoding='utf-8')
+    os.replace(temporary, path)
+
+def bio_setup(client):
+    client.bio_path = DIR / (client.session_name + '.bio.json')
+    client.bio_lock = asyncio.Lock()
+    client.bio_task = None
+    state = dict(items=list(BIO_DEFAULTS), enabled=False, index=0, due=0, error='')
+    if client.bio_path.exists():
+        try:
+            loaded = json.loads(client.bio_path.read_text(encoding='utf-8'))
+            if not isinstance(loaded.get('items'), list) or not all(isinstance(x, str) and x.strip() for x in loaded['items']):
+                raise ValueError('Invalid bio list')
+            state.update(loaded)
+            state['index'] = int(state['index'])
+            state['due'] = float(state['due'])
+        except (ValueError, TypeError, OSError):
+            # Preserve the damaged file for recovery; never silently overwrite it.
+            client.bio_path.rename(client.bio_path.with_suffix('.broken-' + str(time.time_ns())))
+            state['error'] = 'Saqlangan ro‘yxat buzilgan; zaxira nusxa saqlandi.'
+    client.bio_state = state
+    if state['enabled'] and state['items']:
+        client.bio_task = asyncio.create_task(bio_loop(client))
+
+async def bio_loop(client):
+    try:
+        while client.bio_state['enabled']:
+            state = client.bio_state
+            delay = max(0, state['due'] - time.time())
+            if delay:
+                await asyncio.sleep(delay)
+            if not client.is_connected():
+                await asyncio.sleep(5)
+                continue
+            async with client.bio_lock:
+                if not state['enabled'] or not state['items']:
+                    return
+                index = state['index'] % len(state['items'])
+                try:
+                    await client(UpdateProfileRequest(about=state['items'][index]))
+                except FloodWaitError as exc:
+                    state['due'] = time.time() + exc.seconds + 1
+                    state['error'] = f'Telegram kutish cheklovi: {exc.seconds} soniya.'
+                except Exception as exc:
+                    state['error'] = f'{index + 1}-gap: {type(exc).__name__}'
+                    if 'AboutTooLong' in type(exc).__name__:
+                        state['enabled'] = False
+                        state['error'] += ' — bio uzun. /bio_edit bilan qisqartirib, /bio_on yuboring.'
+                    else:
+                        state['due'] = time.time() + BIO_INTERVAL
+                else:
+                    state['index'] = (index + 1) % len(state['items'])
+                    state['due'] = time.time() + BIO_INTERVAL
+                    state['error'] = ''
+                bio_save(client)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        client.bio_state['enabled'] = False
+        client.bio_state['error'] = 'Bio vazifasi to‘xtadi. Saqlash joyini tekshirib /bio_on yuboring.'
+        logging.exception('Bio task failed')
+
+async def bio_stop(client):
+    task = getattr(client, 'bio_task', None)
+    if task and not task.done():
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    client.bio_task = None
+
+def bio_parse_items(text):
+    # Accept the numbered list from Saved Messages, including multiline entries.
+    text = text.strip()
+    if re.match(r'^\d+[.)]\s+', text):
+        return [x.strip() for x in re.split(r'(?m)^\s*\d+[.)]\s+', text) if x.strip()]
+    return [text] if text else []
+
+async def bio_action(client, command, argument):
+    if command == 'bio_off':
+        await bio_stop(client)
+    async with client.bio_lock:
+        state = client.bio_state
+        items = state['items']
+        if command == 'bio_on':
+            if not items:
+                return ['Ro‘yxat bo‘sh. /bio_add Gap orqali qo‘shing.']
+            state['enabled'] = True
+            if not client.bio_task or client.bio_task.done():
+                state['due'] = max(time.time(), state['due'])
+                state['error'] = ''
+                bio_save(client)
+                client.bio_task = asyncio.create_task(bio_loop(client))
+            return ['✅ Bio yoqildi. Gaplar har 5 daqiqada navbat bilan almashadi. Holat: /bio']
+        if command == 'bio_off':
+            state['enabled'] = False
+            bio_save(client)
+            return ['⏸ Bio almashtirish to‘xtadi. Hozirgi bio saqlanadi.']
+        if command == 'bio_add':
+            new = bio_parse_items(argument)
+            if not new:
+                return ['/bio_add Yangi gap\nYoki shu buyruqdan keyin raqamlangan ro‘yxat yuboring.']
+            if any(len(x) > 4096 for x in new):
+                return ['Gap juda uzun. Qisqartirib qayta yuboring.']
+            items.extend(new)
+            bio_save(client)
+            return [f'✅ {len(new)} ta gap qo‘shildi. Jami: {len(items)}. /bio_list']
+        if command in ('bio_del', 'bio_edit'):
+            parts = argument.split(maxsplit=1)
+            if not parts or not parts[0].isdigit() or not 1 <= int(parts[0]) <= len(items):
+                return ['To‘g‘ri raqam kiriting: /bio_del 3 yoki /bio_edit 3 Yangi gap']
+            index = int(parts[0]) - 1
+            if command == 'bio_edit':
+                if len(parts) < 2 or len(parts[1]) > 4096:
+                    return ['/bio_edit 3 Yangi gap (4096 belgidan oshmasin)']
+                items[index] = parts[1].strip()
+            else:
+                items.pop(index)
+                if index < state['index']:
+                    state['index'] -= 1
+                state['index'] %= max(1, len(items))
+                if not items:
+                    state['enabled'] = False
+            bio_save(client)
+            return ['✅ Ro‘yxat yangilandi. /bio_list']
+        if command == 'bio_list':
+            if not items:
+                return ['Ro‘yxat bo‘sh. /bio_add Gap']
+            # Split long lists into Telegram-sized messages, preserving numbering.
+            chunks, chunk = [], ''
+            for i, item in enumerate(items, 1):
+                entry = f'{i}. {item}\n\n'
+                while entry:
+                    take = min(3000 - len(chunk), len(entry))
+                    chunk += entry[:take]
+                    entry = entry[take:]
+                    if len(chunk) == 3000:
+                        chunks.append(chunk)
+                        chunk = ''
+            if chunk:
+                chunks.append(chunk.rstrip())
+            return chunks
+        return [f"📝 Bio: {'yoqilgan' if state['enabled'] else 'o‘chirilgan'}\n"
+                f"Gaplar: {len(items)} | Vaqt: 5 daqiqa\n"
+                f"Keyingi: {state['index'] + 1 if items else 0}\n"
+                f"Holat: {state['error'] or 'Tayyor'}\n\n"
+                '/bio_on — yoqish\n/bio_off — to‘xtatish\n/bio_list — ro‘yxat\n'
+                '/bio_add Gap — qo‘shish (raqamlangan ro‘yxat ham mumkin)\n'
+                '/bio_del 3 — o‘chirish\n/bio_edit 3 Yangi gap — tahrirlash']
+
+async def bio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ok(update):
+        return
+    client = clients.get(context.user_data.get('selected'))
+    if not client:
+        return await update.message.reply_text('Akkaunt tanlang: /accounts, /use NOMI')
+    parts = update.message.text.split(maxsplit=1)
+    command = parts[0].split('@')[0].lstrip('/').lower()
+    for text in await bio_action(client, command, parts[1] if len(parts) > 1 else ''):
+        await update.message.reply_text(text, parse_mode=None)
+
+async def userbot_bio(event):
+    # Avoid executing twice when a command is sent to the control bot.
+    me = await event.client.get_me()
+    if event.chat_id != me.id:
+        return
+    parts = event.raw_text.split(maxsplit=1)
+    for text in await bio_action(event.client, parts[0][1:].lower(), parts[1] if len(parts) > 1 else ''):
+        await event.reply(text, parse_mode=None)
 
 
 # ================= LOGIN TIZIMLARI =================
@@ -306,6 +499,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "❌ /cancel — Kirishni bekor qilish\n"
         "📁 /login — Eski usulda (.session) ulash\n"
         "📊 /accounts, /use NOMI, /status, /logout\n\n"
+        "📝 /bio — Bio ro‘yxati va boshqarish (har 5 daqiqa)\n"
         "🌐 /online_on, /online_off — 24/7 Onlayn\n"
         "🤖 /auto_on, /auto_off — Aqlli AI Avto-javob\n"
         "⏳ /s_on, /s_off — Familyaga soat\n"
@@ -414,6 +608,9 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     client = clients[selected]
     if hasattr(client, 'online_task') and client.online_task: client.online_task.cancel()
     if hasattr(client, 'time_task') and client.time_task: client.time_task.cancel()
+    await bio_stop(client)
+    client.bio_state['enabled'] = False
+    bio_save(client)
     await client.disconnect()
     del clients[selected]
     (DIR / f"{selected}.session").unlink(missing_ok=True)
@@ -587,7 +784,11 @@ async def start():
     app.add_handler(MessageHandler(filters.Document.ALL, session))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_login_text))
 
+    for command in BIO_COMMANDS:
+        app.add_handler(CommandHandler(command, bio_cmd))
+
     await app.initialize()
+    await load_sessions(app)
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
     while True: await asyncio.sleep(3600)
