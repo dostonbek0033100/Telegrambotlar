@@ -3,7 +3,7 @@ import asyncio
 from aiohttp import web
 
 import bot_1
-import bot_2
+#import bot_2
 #import bot_3
 #import bot_4
 
@@ -44,7 +44,7 @@ async def main():
         bot_1.start(),
 
         # Bot 2 — UserBot
-        bot_2.start(),
+        #bot_2.start(),
 
         # Keyinchalik qo‘shamiz
         #bot_3.start()
