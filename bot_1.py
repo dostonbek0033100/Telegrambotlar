@@ -95,8 +95,54 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🛡 @user_... username'lar bloklanadi.\n"
             "🛡 Ismida yoki username'ida 'admin' bor akkauntlar bloklanadi.\n"
             "🛡 Spam so'zlar yozgan foydalanuvchilar bloklanadi.\n\n"
-            "🔐 Admin buyruqlari: /toxta /davom /holat"
+            "🔐 Admin buyruqlari: /toxta /davom /holat\n"
+            "🧹 Shaxsiy chatdagi bot xabarini o'chirish: xabarga javoban /reklama"
         )
+
+
+async def reklama_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Bot yuborgan shaxsiy xabarni foydalanuvchi so'roviga ko'ra o'chiradi.
+
+    Muhim: Bot API boshqa xizmat/token orqali yuborilgan xabarlarni
+    avtomatik kuzata olmaydi. Foydalanuvchi o'sha xabarga reply qilishi kerak.
+    """
+    msg = update.effective_message
+    chat = update.effective_chat
+    if not msg or not chat:
+        return
+
+    if chat.type != 'private':
+        await msg.reply_text('🧹 /reklama faqat Moderbot bilan shaxsiy chatda ishlaydi.')
+        return
+
+    target = msg.reply_to_message
+    if target is None:
+        await msg.reply_text(
+            '🧹 Reklama xabarini bosib ushla → «Javob berish / Reply» → '
+            '/reklama deb yubor.\n'
+            'Bot faqat shu chatdagi o‘zining xabarini o‘chirishi mumkin.'
+        )
+        return
+
+    sender = target.from_user
+    if sender is None or sender.id != context.bot.id:
+        await msg.reply_text('⚠️ Bu xabar Moderbot yuborgan xabar emas.')
+        return
+
+    try:
+        await context.bot.delete_message(chat_id=chat.id, message_id=target.message_id)
+    except Exception as exc:
+        # Bot API: 48 soatdan eski xabarlarni o'chirish taqiqlanadi.
+        print(f'❌ Reklama xabarini o‘chirishda xatolik: {type(exc).__name__}: {exc}')
+        await msg.reply_text(
+            '❌ Xabarni o‘chirib bo‘lmadi. Telegram odatda faqat '
+            '48 soatdan yangi xabarlarni o‘chirishga ruxsat beradi.\n'
+            'Agar reklama qayta kelsa, bot tokenini BotFather orqali yangila.'
+        )
+        return
+
+    print(f'🧹 Shaxsiy chatdagi bot xabari o‘chirildi: chat={chat.id}, msg={target.message_id}')
+    await msg.reply_text('✅ Reklama xabari o‘chirildi.\n⚠️ Takrorlanmasligi uchun bot tokenini ham tekshir.')
 
 
 async def admin_only(update):
@@ -253,6 +299,7 @@ async def start():
     application.add_handler(CommandHandler('toxta', toxta_command))
     application.add_handler(CommandHandler('davom', davom_command))
     application.add_handler(CommandHandler('holat', holat_command))
+    application.add_handler(CommandHandler('reklama', reklama_command))
     application.add_handler(ChatMemberHandler(check_new_member, ChatMemberHandler.CHAT_MEMBER))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND | filters.CAPTION, check_spam_message))
     print('✅ ModerBot-1 tayyor!')
